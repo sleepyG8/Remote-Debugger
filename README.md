@@ -17,7 +17,7 @@ that being said this is original and I look forward to building this into the ne
 
 Facts:
 
-(any examples I found were from 2015 and 2008 and written in c++ so I wrote this in C for speed and windows nt apis are written in C so lets keep it native)
+(any examples I found were from 2015 and 2008 and written in c++ so I wrote this in C for speed and windows nt apis are written in C so lets keep it native) and windows internals
 
 (checks for debugging with the PEB)
 
