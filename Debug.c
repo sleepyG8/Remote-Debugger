@@ -30,6 +30,32 @@ return TRUE;
 }
 */
 
+BOOL logo() {
+    
+    //aunt ansi came to town
+        printf("\x1B[2J");
+    
+        printf("\x1B[2;20H");
+        printf("\x1B[37;44m");
+        printf("Debugger By Sleepy:\n                            v0.0.1\n");
+    
+        
+    
+    
+        printf("\x1B[4;1H");
+        //char *buff = "+";
+        for (int i = 0; i < 100; i++) {
+            printf("+");
+        }
+        
+        
+        printf("\x1B[6;10Hprocesses:\n\n");
+        printf("\x1B[0m");
+        
+        return 0;
+    }
+
+
 BOOL getThreads(DWORD *threadId) {
     HANDLE hThread;
     
@@ -111,7 +137,7 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess) {
         return FALSE;
     }
 
-    printf("+isBeingDebugged: %i\n", pbi.BeingDebugged);
+    printf("\x1B[31m+isBeingDebugged: %i\n\x1B[0m", pbi.BeingDebugged);
 
     size_t bytesread;
     //printf("%p", peb.LoaderData->Length);
@@ -161,8 +187,9 @@ int main(int argc, char* argv[]) {
     STARTUPINFO si = { sizeof(si) };
     PROCESS_INFORMATION pi = { 0 };
     if (argc < 1) {
-        printf("Usage: ./pebber <path to file>");
+        printf("Usage: ./peb <path to file>");
     } 
+    logo();
     char *process = argv[1];
     //"C:\\Windows\\System32\\notepad.exe"
     if (CreateProcess(
