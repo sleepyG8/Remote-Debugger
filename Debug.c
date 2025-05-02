@@ -1,8 +1,14 @@
 #include <windows.h>
 #include <winternl.h>
 #include <stdio.h>
+#include <securitybaseapi.h>
+#include <sddl.h> 
+#include <AclAPI.h>
+
+#define STATUS_SUCCESS ((NTSTATUS)0x00000000L)
 
 #pragma comment(lib, "User32.lib")
+#pragma comment(lib, "Advapi32.lib")
 
 CONTEXT context;
 
@@ -52,7 +58,7 @@ BOOL logo() {
         printf("\x1B[6;10Hprocesses:\n\n");
         printf("\x1B[0m");
         
-        return TRUE;
+        return 0;
     }
 
 
@@ -61,7 +67,7 @@ BOOL getThreads(DWORD *threadId) {
     
     //DWORD threadId = 5652; // Replace with the actual thread ID
 
-    // get the thread handle
+    // Get a handle to the thread
     hThread = OpenThread(THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME, FALSE, threadId);
     if (hThread == NULL) {
         printf("Error: Unable to open thread.\n");
@@ -71,12 +77,12 @@ BOOL getThreads(DWORD *threadId) {
     // Suspend the thread to safely retrieve its context
     SuspendThread(hThread);
 
-    // set context
+    // Initialize the context structure and set ContextFlags to get full context
     context.ContextFlags = CONTEXT_FULL | CONTEXT_AMD64;
 
-    // get context
+    // Retrieve the thread context
     if (GetThreadContext(hThread, &context)) {
-        // hide debugger
+        // Print general-purpose registers
         context.Dr6 = 0;
         context.Dr0 = 0xDEADBEEF;
         context.Dr1 = 0xDEADBEEF;
@@ -88,7 +94,7 @@ BOOL getThreads(DWORD *threadId) {
         printf("RCX: %016llX\n", context.Rcx);
         printf("RDX: %016llX\n", context.Rdx);
 
-        
+        // Print more registers as needed...
     } else {
         printf("Error: Unable to get thread context.\n");
         return FALSE;
@@ -126,7 +132,7 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess) {
         return FALSE;
     }
     
-   // print peb addr
+   // printf("PEB Address of the target process: %s\n", proc.PebBaseAddress);
     printf("Peb address: %p", proc.PebBaseAddress);
     
     PEB_LDR_DATA ldrData;
@@ -162,7 +168,7 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess) {
         
 
 
-        // DLL details
+        // Print DLL details
         WCHAR dllName[MAX_PATH];
         wprintf(L"Length DLL fullname: %p\n", ldrEntry.FullDllName.Buffer);
         if (ldrEntry.FullDllName.Length > 0 &&
@@ -182,6 +188,111 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess) {
     } while (currentEntry.Flink != &ldrData.InMemoryOrderModuleList);
     return TRUE;
 }   
+
+BOOL GetSecurityDescriptor(HANDLE hObject) {
+    HMODULE hAdvapi32 = LoadLibrary("Advapi32.dll");
+if (!hAdvapi32) {
+    printf("Failed to load Advapi32.dll!\n");
+    return FALSE;
+}
+
+typedef BOOL (WINAPI *pIsValidSecurityDescriptor)(PSECURITY_DESCRIPTOR);
+pIsValidSecurityDescriptor IsValidSD = (pIsValidSecurityDescriptor)GetProcAddress(hAdvapi32, "IsValidSecurityDescriptor");
+
+if (!IsValidSD) {
+    printf("Failed to retrieve IsValidSecurityDescriptor function!\n");
+    FreeLibrary(hAdvapi32);
+    return FALSE;
+}
+
+
+
+    typedef NTSTATUS (NTAPI *pZwQuerySecurityObject)(
+        HANDLE, OBJECT_INFORMATION_CLASS, PVOID, ULONG, PULONG
+    );
+
+    //setting dll manually
+    HMODULE hNtDll = LoadLibrary("ntdll.dll");
+    pZwQuerySecurityObject ZwQuerySecurityObject = (pZwQuerySecurityObject)GetProcAddress(hNtDll, "ZwQuerySecurityObject");
+
+
+
+
+ULONG sdSize = 0;
+//this also sets the size for the psd alloc
+NTSTATUS status = ZwQuerySecurityObject(hObject, OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION, NULL, sdSize, &sdSize);
+
+PSECURITY_DESCRIPTOR pSD = (PSECURITY_DESCRIPTOR)malloc(sdSize);
+if (!pSD) {
+    printf("Memory allocation failed!\n");
+    return FALSE;
+}
+
+status = ZwQuerySecurityObject(hObject, OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION, pSD, sdSize, &sdSize);
+
+if (!IsValidSD(pSD)) {
+    printf("Invalid security descriptor!\n");
+    return FALSE;
+}
+
+if (status == STATUS_SUCCESS) {
+    printf("retrieved the security descriptor!\n");
+} else {
+    printf("error\n");
+    return FALSE;
+}
+
+PSID ownerSID = NULL;
+PSID oGroup;
+PACL dasl;
+BOOL ownerDefaulted;
+BOOL ownerDefaultedGroup;
+BOOL ownerDefaultedDasl;
+BOOL daslPresent;
+//getting owner
+if (!GetSecurityDescriptorOwner(pSD, &ownerSID, &ownerDefaulted)) {
+    printf("error getting owner SID\n");
+    return FALSE;
+}
+// getting group
+if (!GetSecurityDescriptorGroup(pSD, &oGroup, &ownerDefaultedGroup)){
+    printf("error getting Object group\n");
+    return FALSE;
+}
+//getting dacl
+if (!GetSecurityDescriptorDacl(pSD, &daslPresent, &dasl, &ownerDefaultedDasl)) {
+    printf("error getting DACL\n");
+    return FALSE;
+} else {
+    if (daslPresent == FALSE) {
+        printf("No group permissions set\n");
+    } else {
+        printf("DACL found!\n");
+    }
+}
+
+LPSTR daclOut;
+if (ConvertSecurityDescriptorToStringSecurityDescriptor(pSD, SDDL_REVISION_1, DACL_SECURITY_INFORMATION, &daclOut, NULL)) {
+    printf("DACL: %s\n", daclOut);
+}
+
+//ConvertStringSecurityDescriptorToSecurityDescriptor found this use later to set a descriptor?
+
+LPSTR sidstring;
+if (ConvertSidToStringSid(ownerSID, &sidstring)) {
+    printf("SID: %s\n", sidstring);
+} else {
+    printf("error geeting SID\n");
+    return FALSE;
+}
+//SE_OBJECT_TYPE sObj;
+//SECURITY_INFORMATION sInfo;
+//if (GetSecurityInfo(hObject, sObj, sInfo, &ownerSID, &oGroup,  ))
+
+return TRUE;
+FreeLibrary(hAdvapi32);
+FreeLibrary(hNtDll);
+}
 
 int main(int argc, char* argv[]) {
     STARTUPINFO si = { sizeof(si) };
@@ -236,8 +347,36 @@ int main(int argc, char* argv[]) {
             }
         */
         WaitForInputIdle(pi.hProcess, INFINITE);
+
+
+        //geting object info
+        typedef NTSTATUS (NTAPI *pNtQueryObject)(
+            HANDLE, OBJECT_INFORMATION_CLASS, PVOID, ULONG, PULONG
+        );
+        
+        HMODULE hNtDll = LoadLibrary("ntdll.dll");
+        pNtQueryObject NtQueryObject = (pNtQueryObject)GetProcAddress(hNtDll, "NtQueryObject");
+    
+        PUBLIC_OBJECT_BASIC_INFORMATION objInfo;
+    
+       // HANDLE hObject = GetCurrentProcess();
+        ULONG size;
+        NTSTATUS status = NtQueryObject(hProcess, ObjectBasicInformation, &objInfo, sizeof(objInfo), &size);
+        
+            if (!GetSecurityDescriptor(hProcess)) {
+                printf("error\n");
+            }
+    
+    
+            printf("Object Attributes: %i\n", objInfo.Attributes);
+        
+            
+        //finally calling peb function
         GetPEBFromAnotherProcess(hProcess); 
 
+            //Get OBJ attributes mostly 0 but kernel uses this
+
+            free(hNtDll);
         CloseHandle(hProcess);
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
