@@ -52,7 +52,7 @@ BOOL logo() {
         printf("\x1B[6;10Hprocesses:\n\n");
         printf("\x1B[0m");
         
-        return 0;
+        return TRUE;
     }
 
 
