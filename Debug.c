@@ -61,7 +61,7 @@ BOOL getThreads(DWORD *threadId) {
     
     //DWORD threadId = 5652; // Replace with the actual thread ID
 
-    // Get a handle to the thread
+    // get the thread handle
     hThread = OpenThread(THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME, FALSE, threadId);
     if (hThread == NULL) {
         printf("Error: Unable to open thread.\n");
@@ -71,12 +71,12 @@ BOOL getThreads(DWORD *threadId) {
     // Suspend the thread to safely retrieve its context
     SuspendThread(hThread);
 
-    // Initialize the context structure and set ContextFlags to get full context
+    // set context
     context.ContextFlags = CONTEXT_FULL | CONTEXT_AMD64;
 
-    // Retrieve the thread context
+    // get context
     if (GetThreadContext(hThread, &context)) {
-        // Print general-purpose registers
+        // hide debugger
         context.Dr6 = 0;
         context.Dr0 = 0xDEADBEEF;
         context.Dr1 = 0xDEADBEEF;
@@ -88,7 +88,7 @@ BOOL getThreads(DWORD *threadId) {
         printf("RCX: %016llX\n", context.Rcx);
         printf("RDX: %016llX\n", context.Rdx);
 
-        // Print more registers as needed...
+        
     } else {
         printf("Error: Unable to get thread context.\n");
         return FALSE;
@@ -126,7 +126,7 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess) {
         return FALSE;
     }
     
-   // printf("PEB Address of the target process: %s\n", proc.PebBaseAddress);
+   // print peb addr
     printf("Peb address: %p", proc.PebBaseAddress);
     
     PEB_LDR_DATA ldrData;
@@ -162,7 +162,7 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess) {
         
 
 
-        // Print DLL details
+        // DLL details
         WCHAR dllName[MAX_PATH];
         wprintf(L"Length DLL fullname: %p\n", ldrEntry.FullDllName.Buffer);
         if (ldrEntry.FullDllName.Length > 0 &&
