@@ -74,15 +74,15 @@ BOOL getThreads(DWORD *threadId) {
         return TRUE;
     }
 
-    // Suspend the thread to safely retrieve its context
+    // Suspend the thread 
     SuspendThread(hThread);
 
-    // Initialize the context structure and set ContextFlags to get full context
+    //may have to change I have a amd processor
     context.ContextFlags = CONTEXT_FULL | CONTEXT_AMD64;
 
-    // Retrieve the thread context
+    
     if (GetThreadContext(hThread, &context)) {
-        // Print general-purpose registers
+       //shhhh were sneaky with this debugger hiding from the proc 
         context.Dr6 = 0;
         context.Dr0 = 0xDEADBEEF;
         context.Dr1 = 0xDEADBEEF;
@@ -94,16 +94,16 @@ BOOL getThreads(DWORD *threadId) {
         printf("RCX: %016llX\n", context.Rcx);
         printf("RDX: %016llX\n", context.Rdx);
 
-        // Print more registers as needed...
+        //I will add more registers later I meant to add rip
     } else {
         printf("Error: Unable to get thread context.\n");
         return FALSE;
     }
 
-    // Resume the thread
+    
     ResumeThread(hThread);
 
-    // Close the handle to the thread
+   
     CloseHandle(hThread);
 
     return TRUE;
