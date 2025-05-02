@@ -16,3 +16,15 @@ I am most proud of my peb implementation as it is undocumented by microsoft and 
 that being said this is original and I look forward to building this into the next windbg
 
 Sleepy :)
+
+To do: 
+
++make into terminal commands/loop(easy)
+
++add custom breakpoints add addresses to go deeper(easy)
+
++better logo
+
++more optimization its already fast but ill add a seperate thread from the while loop to execute commands like !break, !clear, !atrributes, !peb, !teb, !access 
+
++A kernel driver in the future to access kernel structures
