@@ -9,7 +9,7 @@ CONTEXT context;
 typedef NTSTATUS(NTAPI* pNtQueryInformationProcess)(
     HANDLE, PROCESSINFOCLASS, PVOID, ULONG, PULONG);
 
-BOOL readRdxReg(HANDLE hProcess, CONTEXT context) {
+/*BOOL readRdxReg(HANDLE hProcess, CONTEXT context) {
 
 SIZE_T bytesRead;
 BYTE *buffer = (BYTE*)malloc(256 * sizeof(BYTE));
@@ -28,6 +28,7 @@ if (ReadProcessMemory(hProcess, (LPCVOID)context.Rdx, &buffer, sizeof(buffer), &
 
 return TRUE;
 }
+*/
 
 BOOL getThreads(DWORD *threadId) {
     HANDLE hThread;
@@ -188,8 +189,6 @@ int main(int argc, char* argv[]) {
                     printf("thread address/ID: %p\n", &threadId);
                     if (!getThreads(threadId)) {
                         printf("Error reading thread context\n");
-                    } else {
-                        readRdxReg(hProcess, context);
                     }
                     
                 }
@@ -221,3 +220,4 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
+
