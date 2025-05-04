@@ -72,11 +72,11 @@ BOOL logo() {
 BOOL getThreads(DWORD *threadId) {
     HANDLE hThread;
     //HMODULE hModule = GetModuleHandle("notepad.exe"); // Or LoadLibrary() if it's a DLL
-//LPVOID targetAddr = GetProcAddress(hModule, "TargetFunction");
 
-    //DWORD threadId = 5652; // Replace with the actual thread ID
 
-    // Get a handle to the thread
+   
+
+
     hThread = OpenThread(THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME, FALSE, threadId);
     if (hThread == NULL) {
         printf("Error: Unable to open thread.\n");
@@ -89,7 +89,7 @@ BOOL getThreads(DWORD *threadId) {
     // Initialize the context structure and set ContextFlags to get full context
     context.ContextFlags = CONTEXT_FULL | CONTEXT_AMD64;
 
-    // Retrieve the thread context
+   //context
     if (GetThreadContext(hThread, &context)) {
         // Print general-purpose registers
         context.Dr6 = 0;
@@ -105,16 +105,16 @@ BOOL getThreads(DWORD *threadId) {
         printf("RCX: %016llX\n", context.Rcx);
         printf("RDX: %016llX\n", context.Rdx);
 
-        // Print more registers as needed...
+      
     } else {
         printf("Error: Unable to get thread context.\n");
         return FALSE;
     }
 
-    // Resume the thread
+
     ResumeThread(hThread);
 
-    // Close the handle to the thread
+
     CloseHandle(hThread);
 
     return TRUE;
