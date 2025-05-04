@@ -31,12 +31,12 @@ Sleepy :)
 
 To do: 
 
-+make into terminal commands/loop(easy)
++make into terminal commands/loop(done) done but needs made better
 
 +add custom breakpoints add addresses to go deeper(easy)
 
-+better logo
++better logo (last)
 
-+more optimization its already fast but ill add a seperate thread from the while loop to execute commands like !break, !clear, !atrributes, !peb, !teb, !access 
++more optimization its already fast but ill add a seperate thread from the while loop to execute commands like !break, !clear, !atrributes, !peb, !teb, !access (done)
 
 +A kernel driver in the future to access kernel structures
