@@ -11,7 +11,7 @@
 #pragma comment(lib, "Advapi32.lib")
 
 CONTEXT context;
-
+//for future use
 struct mystructs {
 
 PPEB pebaddr;
@@ -74,9 +74,7 @@ BOOL getThreads(DWORD *threadId) {
     //HMODULE hModule = GetModuleHandle("notepad.exe"); // Or LoadLibrary() if it's a DLL
 
 
-   
-
-
+  //get the thread handle
     hThread = OpenThread(THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME, FALSE, threadId);
     if (hThread == NULL) {
         printf("Error: Unable to open thread.\n");
@@ -87,6 +85,7 @@ BOOL getThreads(DWORD *threadId) {
     SuspendThread(hThread);
 
     // Initialize the context structure and set ContextFlags to get full context
+
     context.ContextFlags = CONTEXT_FULL | CONTEXT_AMD64;
 
    //context
@@ -435,7 +434,7 @@ printf("Thread ID: %lu\n", pi.dwThreadId);
                         //Get OBJ attributes mostly 0 but kernel uses this
                                  
                  
-                        
+        
                     }
                     
                     WaitForInputIdle(pi.hProcess, INFINITE);
@@ -447,6 +446,7 @@ printf("Thread ID: %lu\n", pi.dwThreadId);
 
 
 int main(int argc, char* argv[]) {
+    //fibers :)
     LPVOID fiberMain = ConvertThreadToFiber(NULL); 
     LPVOID debugFiber = CreateFiber(0, debug, argv[1]);
 
