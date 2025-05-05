@@ -11,13 +11,20 @@
 #pragma comment(lib, "Advapi32.lib")
 
 CONTEXT context;
-//for future use
+
 struct mystructs {
 
 PPEB pebaddr;
 PRTL_USER_PROCESS_PARAMETERS params;
+BYTE BeingDebugged;
 
-}mystructs;
+}peb;
+
+struct myparams {
+
+WCHAR *fullPath;
+
+}myparams;
 
 typedef NTSTATUS(NTAPI* pNtQueryInformationProcess)(
     HANDLE, PROCESSINFOCLASS, PVOID, ULONG, PULONG);
@@ -42,6 +49,9 @@ if (ReadProcessMemory(hProcess, (LPCVOID)context.Rdx, &buffer, sizeof(buffer), &
 return TRUE;
 }
 */
+
+WCHAR imagePath[MAX_PATH] = {0};
+
 
 BOOL logo() {
     
@@ -72,28 +82,24 @@ BOOL logo() {
 BOOL getThreads(DWORD *threadId) {
     HANDLE hThread;
     //HMODULE hModule = GetModuleHandle("notepad.exe"); // Or LoadLibrary() if it's a DLL
+//LPVOID targetAddr = GetProcAddress(hModule, "TargetFunction");
 
+    //DWORD threadId = 5652; // Replace with the actual thread ID
 
-  //get the thread handle
     hThread = OpenThread(THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME, FALSE, threadId);
     if (hThread == NULL) {
         printf("Error: Unable to open thread.\n");
         return TRUE;
     }
 
-    // Suspend the thread to safely retrieve its context
     SuspendThread(hThread);
 
-    // Initialize the context structure and set ContextFlags to get full context
-
     context.ContextFlags = CONTEXT_FULL | CONTEXT_AMD64;
-
-   //context
+    //setting conetext can help avoid detection
     if (GetThreadContext(hThread, &context)) {
-        // Print general-purpose registers
         context.Dr6 = 0;
         context.Dr0 = 0xDEADBEEF;
-        context.Dr1 = 0xDEADBEEF;
+        context.Dr1 = 1;
         context.Dr2 = 0xDEADBEEF;
         context.Dr3 = 0xDEADBEEF;
         SetThreadContext(hThread, &context);
@@ -104,15 +110,12 @@ BOOL getThreads(DWORD *threadId) {
         printf("RCX: %016llX\n", context.Rcx);
         printf("RDX: %016llX\n", context.Rdx);
 
-      
     } else {
         printf("Error: Unable to get thread context.\n");
         return FALSE;
     }
 
-
     ResumeThread(hThread);
-
 
     CloseHandle(hThread);
 
@@ -145,9 +148,10 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread) {
     
    // printf("PEB Address of the target process: %s\n", proc.PebBaseAddress);
     printf("Peb address: %p", proc.PebBaseAddress);
-    
-   struct mystructs peb;
-   peb.pebaddr = proc.PebBaseAddress;
+    peb.pebaddr = proc.PebBaseAddress;
+   
+   
+   
    //printf("Peb struct address: %p", peb.pebaddr);
 
     PEB_LDR_DATA ldrData;
@@ -157,14 +161,39 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread) {
         printf("Failed to read PEB from the target process (Error %lu)\n", GetLastError());
         return FALSE;
     }
+   // printf("Parameters: %i\n", pbi.ProcessParameters->CommandLine.Length); this is only for terminal apps
     
     printf("\x1B[31m+isBeingDebugged: %i\n\x1B[0m", pbi.BeingDebugged);
 
+    peb.BeingDebugged = pbi.BeingDebugged; //neat
+    peb.params = pbi.ProcessParameters; //storing address
+    
+
+    //remember even if its a Buffer in memory you have to read it to a WCHAR for storing like shown this is key
+    RTL_USER_PROCESS_PARAMETERS parameters;
+    struct myparams myparams;
+    
+    myparams.fullPath = (WCHAR*)malloc(1068 * sizeof(WCHAR));
+
+    if (!ReadProcessMemory(hProcess, pbi.ProcessParameters, &parameters, sizeof(RTL_USER_PROCESS_PARAMETERS), NULL)) {
+        printf("error reading params\n");
+    } else {
+       // WCHAR imagePath[MAX_PATH] = {0};
+        if (!ReadProcessMemory(hProcess, parameters.ImagePathName.Buffer, imagePath, parameters.ImagePathName.Length, NULL)) {
+            printf("Error reading ImagePathName buffer\n");
+        } else {
+            wprintf(L"Path: %ls\n", imagePath);
+            myparams.fullPath = _wcsdup(imagePath);
+           // free(myparams.fullPath);
+        }
+    }
+    
     size_t bytesread;
+
     //printf("%p", peb.LoaderData->Length);
     printf("Ldr address: %p\n", pbi.Ldr);
     if (!ReadProcessMemory(hProcess, (LPCVOID)pbi.Ldr , &ldrData, sizeof(ldrData), &bytesread)) {
-            printf("error\n");
+            printf("error getting ldr, retry...\n");
             return FALSE;
            // return 1;
     }
@@ -202,7 +231,7 @@ if (ldrEntry.DllBase > 0 && VirtualQueryEx(hProcess, ldrEntry.DllBase, &mbi, siz
             dllName[ldrEntry.FullDllName.Length / sizeof(WCHAR)] = L'\0'; // Null-terminate the string
             wprintf(L"Module: %ls\n", dllName);
         } else {
-            printf("Must be admin to pull modules!");
+            printf("Must be admin to pull modules!\n");
             return FALSE;
             
         }
@@ -321,7 +350,7 @@ FreeLibrary(hAdvapi32);
 FreeLibrary(hNtDll);
 }
 
-void WINAPI debug(LPCVOID param) {
+BOOL WINAPI debug(LPCVOID param) {
 
     char *arg = (char*)param;
     STARTUPINFO si = { sizeof(si) };
@@ -411,7 +440,7 @@ printf("Thread ID: %lu\n", pi.dwThreadId);
 
                                 else if (strcmp(buff,"!peb") == 0) {
                                     printf("peb already retrieved\n");
-                                   // printf("Peb address: %p", p)
+                                    printf("Peb address: %p\n", peb.pebaddr);
                                      
 
                                 }
@@ -422,6 +451,37 @@ printf("Thread ID: %lu\n", pi.dwThreadId);
                                     break;
                                 }
 
+                                else if (strcmp(buff, "!params") == 0) {
+                                   
+                                    if (peb.BeingDebugged == 0) {
+                                        printf("debugged?: No\n");
+                                    }
+                                    printf("Peb address: %p\n", peb.pebaddr);
+
+                                    wprintf(L"Path: %ls\n", imagePath);
+
+
+                                }
+
+                                else if (strcmp(buff, "clear") == 0) {
+                                    printf("\x1B[2J");                             
+                                   }
+
+                                else if (strcmp(buff, "help") == 0) {
+                                    printf("\n===== Debugger Usage =====\n");
+                                    printf("!reg     - Print process registers\n");
+                                    printf("!attr    - Retrieve object attributes\n");
+                                    printf("!peb     - Display PEB details\n");
+                                    printf("!params  - Show process parameters (debug status & path)\n");
+                                    printf("clear    - Clear the console screen\n");
+                                    printf("exit     - Terminate debugging session\n");
+                                    printf("help     - Display additional commands\n");
+                                    printf("==========================\n");
+
+                                }
+
+                                
+
                             }
 
                         }
@@ -429,12 +489,7 @@ printf("Thread ID: %lu\n", pi.dwThreadId);
                                         
                     }
                              
-                    
-                               
-                        //Get OBJ attributes mostly 0 but kernel uses this
-                                 
-                 
-        
+
                     }
                     
                     WaitForInputIdle(pi.hProcess, INFINITE);
@@ -446,15 +501,14 @@ printf("Thread ID: %lu\n", pi.dwThreadId);
 
 
 int main(int argc, char* argv[]) {
-    //fibers :)
     LPVOID fiberMain = ConvertThreadToFiber(NULL); 
     LPVOID debugFiber = CreateFiber(0, debug, argv[1]);
 
     if (debugFiber) {
         while (1) {
         SwitchToFiber(debugFiber);
-        }
-        DeleteFiber(debugFiber);   
+        } // Launch debugger inside fiber
+        DeleteFiber(debugFiber);   // Cleanup
 
        
 }
