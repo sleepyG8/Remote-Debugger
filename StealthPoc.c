@@ -447,6 +447,7 @@ printf("Thread ID: %lu\n", pi.dwThreadId);
 
                                 else if (strcmp(buff, "exit") == 0) {
                                     printf("Goodbye!\n");
+                                    printf("ctrl-c to exit\n");
                                     CloseHandle(hProcess);
                                     break;
                                 }
@@ -489,7 +490,12 @@ printf("Thread ID: %lu\n", pi.dwThreadId);
                                         
                     }
                              
-
+                    //finally calling peb function
+                               
+                        //Get OBJ attributes mostly 0 but kernel uses this
+                                 
+                 
+                        
                     }
                     
                     WaitForInputIdle(pi.hProcess, INFINITE);
@@ -507,8 +513,9 @@ int main(int argc, char* argv[]) {
     if (debugFiber) {
         while (1) {
         SwitchToFiber(debugFiber);
+        DeleteFiber(debugFiber); 
         } // Launch debugger inside fiber
-        DeleteFiber(debugFiber);   // Cleanup
+          // Cleanup
 
        
 }
