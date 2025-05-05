@@ -1,6 +1,8 @@
 # Remote-Debugger
 A advanced debugger I wrote capable of debugging processes, this is a work in progress and will be updated frequently for more features
 
+The stealth file contains my new POC using fibers to bypass windows protections
+
 peb.exe is the compiled binary but as always I recomend you build from source .c
 
 this is a windows debugger, as of now it pulls all information from the peb, register context, loaded modules, and the addresses of important structures like the ldr and image base address
