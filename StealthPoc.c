@@ -231,7 +231,7 @@ if (ldrEntry.DllBase > 0 && VirtualQueryEx(hProcess, ldrEntry.DllBase, &mbi, siz
             dllName[ldrEntry.FullDllName.Length / sizeof(WCHAR)] = L'\0'; // Null-terminate the string
             wprintf(L"Module: %ls\n", dllName);
         } else {
-            printf("Must be admin to pull modules!\n");
+            printf("Failed to pull modules!\n");
             return FALSE;
             
         }
