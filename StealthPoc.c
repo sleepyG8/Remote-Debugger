@@ -231,7 +231,7 @@ if (ldrEntry.DllBase > 0 && VirtualQueryEx(hProcess, ldrEntry.DllBase, &mbi, siz
             dllName[ldrEntry.FullDllName.Length / sizeof(WCHAR)] = L'\0'; // Null-terminate the string
             wprintf(L"Module: %ls\n", dllName);
         } else {
-            printf("Failed to pull modules!\n");
+            printf("Must be admin to pull modules!\n");
             return FALSE;
             
         }
@@ -349,6 +349,63 @@ return TRUE;
 FreeLibrary(hAdvapi32);
 FreeLibrary(hNtDll);
 }
+
+#define STATUS_INFO_LENGTH_MISMATCH ((NTSTATUS)0xC0000004)
+
+
+typedef NTSTATUS(NTAPI* pNtQuerySystemInformation)(
+    SYSTEM_INFORMATION_CLASS, PVOID, ULONG, PULONG);
+
+
+
+BOOL listProcesses() {
+          HMODULE hNtDll = GetModuleHandle("ntdll.dll");
+    if (!hNtDll) {
+        printf("Failed to load ntdll.dll\n");
+        return FALSE;
+    }
+
+    pNtQuerySystemInformation NtQuerySystemInformation =
+        (pNtQuerySystemInformation)GetProcAddress(hNtDll, "NtQuerySystemInformation");
+    if (!NtQuerySystemInformation) {
+        printf("Failed to get NtQueryInformationProcess\n");
+        return FALSE;
+    }
+
+    PULONG returnLen;
+    NTSTATUS status = NtQuerySystemInformation(SystemProcessInformation, NULL, 0, &returnLen);
+    if (status != STATUS_INFO_LENGTH_MISMATCH) {
+        printf("Error 0x%X", status);
+        return FALSE;
+    }
+
+        SYSTEM_PROCESS_INFORMATION* info = malloc(returnLen);
+        if (!info) {
+            printf("failed to allocate memory\n");
+        }
+
+        status = NtQuerySystemInformation(SystemProcessInformation, info, returnLen, &returnLen);
+            if (status != STATUS_SUCCESS) {
+        printf("Error 2 0x%X", status);
+        return FALSE;
+    } 
+
+while(info) {
+    wprintf(L"Image Name: %ls\n", info->ImageName.Buffer ? info->ImageName.Buffer : L"NULL, no image name\n");
+    printf("Number of Threads (process): %lu\n", info->NumberOfThreads);
+    printf("Next Entry offest: %lu\n", info->NextEntryOffset);
+    printf("Handle count: %lu\n", info->HandleCount);
+    printf("Memory Usage: %llu\n", info->VirtualSize);
+    printf("+++++++++++++++++++++++++++++++++++++++++++\n");
+    if (info->NextEntryOffset == 0) break;
+    info = (SYSTEM_PROCESS_INFORMATION*)((BYTE*)info + info->NextEntryOffset); //loop through using next next entry offset
+}
+   
+    // printf("Process ID: %i", (int)info->UniqueProcessId);
+
+    return TRUE;
+}
+
 
 BOOL WINAPI debug(LPCVOID param) {
 
@@ -474,12 +531,19 @@ printf("Thread ID: %lu\n", pi.dwThreadId);
                                     printf("!attr    - Retrieve object attributes\n");
                                     printf("!peb     - Display PEB details\n");
                                     printf("!params  - Show process parameters (debug status & path)\n");
+                                    printf("!proc    - Display all running processes on the system\n");
                                     printf("clear    - Clear the console screen\n");
                                     printf("exit     - Terminate debugging session\n");
                                     printf("help     - Display additional commands\n");
                                     printf("==========================\n");
 
                                 }
+
+                                    else if (strcmp(buff, "!proc") == 0) {
+                                    printf("Listing system wide process information:\n");
+                                    listProcesses();
+                                }
+
 
                                 
 
