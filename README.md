@@ -17,6 +17,8 @@ I am most proud of my peb implementation as it is undocumented by microsoft and 
 
 that being said this is original and I look forward to building this into the next windbg
 
+if you need help with commands run help 
+
 Facts:
 
 (any examples I found were from 2015 and 2008 and written in c++ so I wrote this in C for speed and windows nt apis are written in C so lets keep it native) and windows internals
