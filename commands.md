@@ -8,6 +8,7 @@
                                     printf("!bit     - Display Bitfield data\n");
                                     printf("!mbi     - get mbi info (only works for unprotected process)");
                                     printf("!synbreak - break at a debug symbol (not stable yet)");
+                                    printf("!break   - Set a break and read registers\n");
                                     printf("clear    - Clear the console screen\n");
                                     printf("exit     - Terminate debugging session\n");
                                     printf("help     - Display additional commands\n");
