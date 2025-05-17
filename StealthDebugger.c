@@ -4,6 +4,7 @@
 #include <securitybaseapi.h>
 #include <sddl.h> 
 #include <AclAPI.h>
+#include <dbghelp.h>
 
 #define STATUS_SUCCESS ((NTSTATUS)0x00000000L)
 
@@ -122,6 +123,42 @@ BOOL getThreads(DWORD *threadId) {
     return TRUE;
 }
 
+//defined my own PEB to get BITFIELD and other structures in the future
+typedef struct _MYPEB {
+    BYTE Reserved1[2];
+    BYTE BeingDebugged;
+        union {
+        BYTE BitField;
+        struct {
+            BYTE ImageUsesLargePages : 1;
+            BYTE IsProtectedProcess : 1;
+            BYTE IsImageDynamicallyRelocated : 1;
+            BYTE SkipPatchingUser32Forwarders : 1;
+            BYTE IsPackagedProcess : 1;
+            BYTE IsAppContainer : 1;
+            BYTE IsProtectedProcessLight : 1;
+            BYTE IsLongPathAwareProcess : 1;
+        };
+    };
+    PVOID Reserved3[2];
+    PPEB_LDR_DATA Ldr;
+    PRTL_USER_PROCESS_PARAMETERS ProcessParameters;
+    PVOID Reserved4[3];
+    PVOID AtlThunkSListPtr;
+    PVOID Reserved5;
+    ULONG Reserved6;
+    PVOID Reserved7;
+    ULONG Reserved8;
+    ULONG AtlThunkSListPtr32;
+    PVOID Reserved9[45];
+    BYTE Reserved10[96];
+    PPS_POST_PROCESS_INIT_ROUTINE PostProcessInitRoutine;
+    BYTE Reserved11[128];
+    PVOID Reserved12[1];
+    ULONG SessionId;
+} MYPEB;
+
+MYPEB pbi;
 BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread) {
     SuspendThread(thread);
     HMODULE hNtDll = GetModuleHandle("ntdll.dll");
@@ -137,7 +174,7 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread) {
         return FALSE;
     }
 
-    PEB pbi;
+    
     PROCESS_BASIC_INFORMATION proc = {0};
     ULONG returnlen;
     NTSTATUS status = NtQueryInformationProcess(hProcess, ProcessBasicInformation, &proc, sizeof(PROCESS_BASIC_INFORMATION), &returnlen);
@@ -162,7 +199,7 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread) {
         return FALSE;
     }
    // printf("Parameters: %i\n", pbi.ProcessParameters->CommandLine.Length); this is only for terminal apps
-    
+   // printf("Is Protected Process?: %lu\n", pbi.IsProtectedProcess);
     printf("\x1B[31m+isBeingDebugged: %i\n\x1B[0m", pbi.BeingDebugged);
 
     peb.BeingDebugged = pbi.BeingDebugged; //neat
@@ -204,12 +241,16 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread) {
 
     LIST_ENTRY currentEntry = ldrData.InMemoryOrderModuleList;
     do {
+        
         LDR_DATA_TABLE_ENTRY ldrEntry = {0};
-        if (!ReadProcessMemory(hProcess, currentEntry.Flink, &ldrEntry, sizeof(ldrEntry), NULL)) {
+        if (!ReadProcessMemory(hProcess, ldrData.InMemoryOrderModuleList.Flink, &ldrEntry, sizeof(ldrEntry), NULL)) {
             printf("Failed to read LDR_DATA_TABLE_ENTRY (Error %lu)\n", GetLastError());
             return FALSE;
             break;
         }
+
+        wprintf(L"Next Entry: %p\n", ldrEntry.InMemoryOrderLinks.Flink);
+
         
       /*  MEMORY_BASIC_INFORMATION mbi = {0};
         if (mbi.State != MEM_COMMIT) {
@@ -226,7 +267,7 @@ if (ldrEntry.DllBase > 0 && VirtualQueryEx(hProcess, ldrEntry.DllBase, &mbi, siz
         // Print DLL details
         WCHAR dllName[MAX_PATH];
         wprintf(L"Length DLL fullname: %p\n", ldrEntry.FullDllName.Buffer);
-        if (ldrEntry.FullDllName.Length > 0 &&
+        if ( ldrEntry.FullDllName.Length > 0 &&
             ReadProcessMemory(hProcess, ldrEntry.FullDllName.Buffer, &dllName, ldrEntry.FullDllName.Length, NULL)) {
             dllName[ldrEntry.FullDllName.Length / sizeof(WCHAR)] = L'\0'; // Null-terminate the string
             wprintf(L"Module: %ls\n", dllName);
@@ -406,6 +447,85 @@ while(info) {
     return TRUE;
 }
 
+#pragma comment(lib, "dbghelp.lib")
+
+//setting a breakpoint using the symbol file (I am working on adding normal breaks at addresses next)
+BOOL setBreakpointatSymbol(HANDLE hProcess, const char* symbol, char* module) {
+    if (!symbol) return FALSE;
+
+
+    
+    SymInitialize(hProcess, NULL, TRUE);
+
+    DWORD64 baseAddr = SymLoadModuleEx(hProcess, NULL, symbol, NULL, 0, 0, NULL, 0);
+if (!baseAddr) {
+    printf("Failed to load module %s, error: %lu\n", symbol, GetLastError());
+    return FALSE;
+}
+
+
+    //printf("data :%s\n", symbol);
+    SYMBOL_INFO *Symbol = (SYMBOL_INFO*)malloc(sizeof(SYMBOL_INFO) + MAX_SYM_NAME);
+    ZeroMemory(Symbol, sizeof(SYMBOL_INFO) + MAX_SYM_NAME);
+    Symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+    Symbol->MaxNameLen = MAX_SYM_NAME;
+
+    if (SymFromName(hProcess, symbol, Symbol)) {
+        printf("Got symbol\n");
+    } else {
+        printf("no symbol file %lu\n", GetLastError());
+        free(Symbol);
+        return FALSE;
+    }
+
+    DWORD oldProtect;
+    if (!VirtualProtect(Symbol->Address, 1, PAGE_EXECUTE_READWRITE, &oldProtect)) {
+        printf("Failed to modify memory protection.\n");
+        free(Symbol);
+        return FALSE;
+    }
+
+    *(BYTE*)Symbol->Address = 0xCC;  // INT3 Breakpoint
+
+    VirtualProtect(Symbol->Address, 1, oldProtect, &oldProtect);
+    free(Symbol);
+    return TRUE;
+}
+
+typedef enum _MEMORY_INFORMATION_CLASS {
+    MemoryBasicInformation
+} MEMORY_INFORMATION_CLASS;
+
+       typedef NTSTATUS (NTAPI *pNtQueryVirtualMemory)(
+    HANDLE, PVOID, MEMORY_INFORMATION_CLASS, PVOID, SIZE_T, PSIZE_T
+);
+
+BOOL getMBI(HANDLE hProcess, LPVOID addr) {
+        MEMORY_BASIC_INFORMATION mbi;
+        DWORD oldProtect;
+   
+ 
+MEMORY_INFORMATION_CLASS infoClass = MemoryBasicInformation;
+
+pNtQueryVirtualMemory NtQueryVirtualMemory = (pNtQueryVirtualMemory)GetProcAddress(
+    GetModuleHandle("ntdll.dll"), "NtQueryVirtualMemory"
+);
+    
+  NTSTATUS status = NtQueryVirtualMemory(hProcess, addr, infoClass, &mbi, sizeof(mbi), NULL);
+if (status != STATUS_SUCCESS) {
+    printf("Protected Region (works for unprotected proc): %lu\n", GetLastError());
+}
+
+    printf("Base address: %p\n", mbi.BaseAddress);
+    printf("Protections: %lu\n", mbi.Protect);
+    printf("State: %lu\n", mbi.State);
+    printf("Partition ID: %lu\n", mbi.PartitionId);
+    printf("Type: %lu\n", mbi.Type);
+    printf("Protect alloc: %lu\n", mbi.AllocationProtect);
+
+    return TRUE;
+
+}
 
 BOOL WINAPI debug(LPCVOID param) {
 
@@ -444,10 +564,11 @@ BOOL WINAPI debug(LPCVOID param) {
             getThreads(threadId);
 
             GetPEBFromAnotherProcess(hProcess, pi.dwThreadId);
+            printf("thread address/ID: %p\n", &threadId);
                     while (1) {
                            
                             
-                            printf("thread address/ID: %p\n", &threadId);
+                            
                         char buff[50];
                         printf("Debug>>");
             
@@ -461,7 +582,7 @@ BOOL WINAPI debug(LPCVOID param) {
                             if (strcmp(buff, "!reg") == 0) {
                                 
                                 printf("Process ID: %lu\n", pi.dwProcessId);
-printf("Thread ID: %lu\n", pi.dwThreadId);
+                                printf("Thread ID: %lu\n", pi.dwThreadId);
                                printf("RIP: %016llX\n", context.Rip);
                                printf("RAX: %016llX\n", context.Rax);
                                printf("RBX: %016llX\n", context.Rbx);
@@ -490,7 +611,9 @@ printf("Thread ID: %lu\n", pi.dwThreadId);
                                                              
     
     
-                                     printf("Object Attributes: %i\n", objInfo.Attributes);
+                                     printf("Object Attributes: %i\n", objInfo.Attributes); 
+                                     printf("Granted Access: %08X\n", objInfo.GrantedAccess);
+                                     printf("Handle count: %lu\n", objInfo.HandleCount);
                                      FreeLibrary(hNtDll);
                                      
                                 } 
@@ -532,6 +655,9 @@ printf("Thread ID: %lu\n", pi.dwThreadId);
                                     printf("!peb     - Display PEB details\n");
                                     printf("!params  - Show process parameters (debug status & path)\n");
                                     printf("!proc    - Display all running processes on the system\n");
+                                    printf("!bit     - Display Bitfield data\n");
+                                    printf("!mbi     - get mbi info (only works for unprotected process)");
+                                    printf("!synbreak - break at a debug symbol (not stable yet)");
                                     printf("clear    - Clear the console screen\n");
                                     printf("exit     - Terminate debugging session\n");
                                     printf("help     - Display additional commands\n");
@@ -542,6 +668,46 @@ printf("Thread ID: %lu\n", pi.dwThreadId);
                                     else if (strcmp(buff, "!proc") == 0) {
                                     printf("Listing system wide process information:\n");
                                     listProcesses();
+                                }
+
+                                else if (strcmp(buff, "!bit") == 0) {
+                                        printf("Is Protected Process?: %lu\n", pbi.IsProtectedProcess);
+                                        printf("Light Protected?: %lu\n", pbi.IsProtectedProcessLight);
+                                        printf("Uses Large Pages?: %lu\n", pbi.ImageUsesLargePages);
+                                        printf("IsImageDynamicallyRelocated?: %lu\n", pbi.IsImageDynamicallyRelocated);
+
+                                } 
+
+                                else if (strcmp(buff,"!symbreak") == 0) {
+                                    char *breakBuffer = (char*)malloc(100 * sizeof(char));
+                                    if (!breakBuffer) {
+                                        printf("Memory allocation error\n");
+                                    }
+                                    printf("Which symbol to break at?\n");
+                                   if  (!fgets(breakBuffer, 99, stdin)) {
+                                    printf("buffer to large\n");
+                                   }
+                                    breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
+                                  // printf("testing\n");
+                                    if (!setBreakpointatSymbol(hProcess, breakBuffer, arg)) {
+                                        printf("Cannot set breakpoint must be from a .pdb file\n");
+                                    }
+                                
+                                }
+
+                                else if (strcmp(buff, "!mbi") == 0) {
+                                            LPVOID *breakBuffer = (LPVOID*)malloc(100 * sizeof(LPVOID));
+                                    if (!breakBuffer) {
+                                        printf("Memory allocation error\n");
+                                    }
+                                    printf("Which addr to get?\n");
+                                   if  (!fgets(breakBuffer, 99, stdin)) {
+                                    printf("buffer to large\n");
+                                   }
+                                    breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
+                                    if (!getMBI(hProcess, breakBuffer)) {
+                                        printf("error");
+                                    }
                                 }
 
 
