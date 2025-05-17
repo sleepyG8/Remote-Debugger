@@ -512,7 +512,8 @@ pNtQueryVirtualMemory NtQueryVirtualMemory = (pNtQueryVirtualMemory)GetProcAddre
 );
     
   NTSTATUS status = NtQueryVirtualMemory(hProcess, addr, infoClass, &mbi, sizeof(mbi), NULL);
-if (status != STATUS_SUCCESS) {
+    //had to set correct status return code took some digging
+if (!NT_SUCCESS(status)) {
     printf("Protected Region (works for unprotected proc): %lu\n", GetLastError());
 }
 
