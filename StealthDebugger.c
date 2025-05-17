@@ -500,6 +500,8 @@ typedef enum _MEMORY_INFORMATION_CLASS {
     HANDLE, PVOID, MEMORY_INFORMATION_CLASS, PVOID, SIZE_T, PSIZE_T
 );
 
+//gets mbi info which is useful for checking protections on a mem region
+//also, I built this for me to test regions while building this debugger
 BOOL getMBI(HANDLE hProcess, LPVOID addr) {
         MEMORY_BASIC_INFORMATION mbi;
         DWORD oldProtect;
@@ -512,7 +514,6 @@ pNtQueryVirtualMemory NtQueryVirtualMemory = (pNtQueryVirtualMemory)GetProcAddre
 );
     
   NTSTATUS status = NtQueryVirtualMemory(hProcess, addr, infoClass, &mbi, sizeof(mbi), NULL);
-    //had to set correct status return code took some digging
 if (!NT_SUCCESS(status)) {
     printf("Protected Region (works for unprotected proc): %lu\n", GetLastError());
 }
@@ -526,6 +527,57 @@ if (!NT_SUCCESS(status)) {
 
     return TRUE;
 
+}
+
+BOOL breakpoint(DWORD threadId, BYTE address) {
+    CONTEXT contextBreak;
+        HANDLE hThread;
+    //HMODULE hModule = GetModuleHandle("notepad.exe"); // Or LoadLibrary() if it's a DLL
+//LPVOID targetAddr = GetProcAddress(hModule, "TargetFunction");
+
+    //DWORD threadId = 5652; // Replace with the actual thread ID
+
+    hThread = OpenThread(THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME | THREAD_QUERY_INFORMATION, FALSE, threadId);
+    if (hThread == NULL) {
+        printf("Error: Unable to open thread.\n");
+        return TRUE;
+    }
+
+   if (SuspendThread(hThread) == -1) {
+    printf("failed to suspend %lu\n", GetLastError());
+    return FALSE;
+   }
+    
+    Sleep(1000);
+    DWORD exitCode;
+    GetExitCodeThread(hThread, &exitCode);
+    printf("exit code: %lu\n", exitCode);
+
+    contextBreak.ContextFlags = CONTEXT_DEBUG_REGISTERS;
+    //setting conetext can help avoid detection
+    if (GetThreadContext(hThread, &contextBreak)) {
+        contextBreak.Dr1 = address;
+        contextBreak.Dr7 |= (1 << 2);  // Enable DR1
+        contextBreak.Dr7 |= (3 << 20); // Break on execution
+        contextBreak.Dr7 |= (0 << 22); // 1-byte breakpoint
+        SetThreadContext(hThread, &contextBreak);
+
+
+        printf("RAX: %016llX\n", contextBreak.Rax);
+        printf("RBX: %016llX\n", contextBreak.Rbx);
+        printf("RCX: %016llX\n", contextBreak.Rcx);
+        printf("RDX: %016llX\n", contextBreak.Rdx);
+
+    } else {
+        printf("Error: Unable to get thread context. %lu\n", GetLastError());
+        return FALSE;
+    }
+
+    ResumeThread(hThread);
+
+    CloseHandle(hThread);
+
+    return TRUE;
 }
 
 BOOL WINAPI debug(LPCVOID param) {
@@ -708,6 +760,21 @@ BOOL WINAPI debug(LPCVOID param) {
                                     breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
                                     if (!getMBI(hProcess, breakBuffer)) {
                                         printf("error");
+                                    }
+                                }
+
+                                   else if (strcmp(buff, "!break") == 0) {
+                                    char *breakBuffer = (char*)malloc(100 * sizeof(char));
+                                    if (!breakBuffer) {
+                                        printf("Memory allocation error\n");
+                                    }
+                                    printf("Which address to break at?\n");
+                                   if  (!fgets(breakBuffer, 99, stdin)) {
+                                    printf("buffer to large\n");
+                                   }
+                                    breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
+                                    if (!breakpoint( pi.dwThreadId , breakBuffer)) {
+                                        printf("failed to set breakpoint, protected memory region.\n");
                                     }
                                 }
 
