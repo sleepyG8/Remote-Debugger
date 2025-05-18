@@ -456,6 +456,51 @@ while(info) {
     return TRUE;
 }
 
+BOOL Getcpuinfo() {
+
+          HMODULE hNtDll = GetModuleHandle("ntdll.dll");
+    if (!hNtDll) {
+        printf("Failed to load ntdll.dll\n");
+        return FALSE;
+    }
+
+    pNtQuerySystemInformation NtQuerySystemInformation =
+        (pNtQuerySystemInformation)GetProcAddress(hNtDll, "NtQuerySystemInformation");
+    if (!NtQuerySystemInformation) {
+        printf("Failed to get NtQueryInformationProcess\n");
+        return FALSE;
+    }
+
+       ULONG returnLen;
+    NTSTATUS status = NtQuerySystemInformation(SystemProcessorPerformanceInformation, NULL, 0, &returnLen);
+    if (status != STATUS_INFO_LENGTH_MISMATCH) {
+        printf("Error 0x%X", status);
+        return FALSE;
+    }
+
+    SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION *spi = (SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION*)malloc(returnLen);
+
+       status = NtQuerySystemInformation(SystemProcessorPerformanceInformation, spi, returnLen, &returnLen);
+    if (NT_SUCCESS(status)) {
+       printf("Loaded processor information:\n");
+    } else {
+        return FALSE;
+    }
+
+        int numProcessors = returnLen / sizeof(SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION);
+    for (int i = 0; i < numProcessors; i++) {
+        printf("CPU %d - Idle time: %lli\n", i, spi[i].IdleTime.QuadPart);
+        printf("CPU %d - Kernel time: %lli\n", i, spi[i].KernelTime.QuadPart);
+        printf("CPU %d - User time: %lli\n", i, spi[i].UserTime.QuadPart);
+        printf("----------------------------------\n");
+    }
+
+    free(spi);
+
+    return TRUE;
+
+}
+
 #pragma comment(lib, "dbghelp.lib")
 
 //setting a breakpoint using the symbol file (I am working on adding normal breaks at addresses next)
@@ -749,6 +794,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                     printf("!synbreak - break at a debug symbol (not stable yet)\n");
                                     printf("!break   - Set a break and read registers\n");
                                     printf("!getreg - print registers wherever in memory currently\n");
+                                    printf("!cpu     - Get CPU data for each processor on the system\n");
                                     printf("clear    - Clear the console screen\n");
                                     printf("exit     - Terminate debugging session\n");
                                     printf("help     - Display additional commands\n");
@@ -822,7 +868,12 @@ BOOL WINAPI debug(LPCVOID param) {
                                         if (!getThreads(threadId)) {
                                             printf("error getting threads\n");
                                             
-                                            
+                                        }
+                                    }
+
+                                    else if (strcmp(buff, "!cpu") == 0) {
+                                        if (!Getcpuinfo()) {
+                                            printf("error %lu", GetLastError());
                                         }
                                     }
 
