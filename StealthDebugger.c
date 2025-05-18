@@ -112,7 +112,7 @@ BOOL getThreads(DWORD *threadId) {
         printf("RDX: %016llX\n", context.Rdx);
 
     } else {
-        printf("Error: Unable to get thread context.\n");
+        printf("Error: Unable to get thread context. %lu\n", GetLastError());
         return FALSE;
     }
 
@@ -224,6 +224,14 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread) {
            // free(myparams.fullPath);
         }
     }
+
+    WCHAR cmd[MAX_PATH] = {0};
+    if (!ReadProcessMemory(hProcess, parameters.CommandLine.Buffer, &cmd, parameters.CommandLine.Length, NULL)) {
+        printf("error reading command line arguments\n");
+        return FALSE;
+    }
+
+    wprintf(L"Command line: %ls\n", cmd);
     
     size_t bytesread;
 
@@ -430,19 +438,20 @@ BOOL listProcesses() {
         printf("Error 2 0x%X", status);
         return FALSE;
     } 
-
+int procCount = 0;
 while(info) {
     wprintf(L"Image Name: %ls\n", info->ImageName.Buffer ? info->ImageName.Buffer : L"NULL, no image name\n");
     printf("Number of Threads (process): %lu\n", info->NumberOfThreads);
-    printf("Next Entry offest: %lu\n", info->NextEntryOffset);
+    //printf("Next Entry offest: %lu\n", info->NextEntryOffset);
     printf("Handle count: %lu\n", info->HandleCount);
-    printf("Memory Usage: %llu\n", info->VirtualSize);
+   // printf("Memory Usage: %llu\n", info->VirtualSize);
     printf("+++++++++++++++++++++++++++++++++++++++++++\n");
+    procCount++;
     if (info->NextEntryOffset == 0) break;
     info = (SYSTEM_PROCESS_INFORMATION*)((BYTE*)info + info->NextEntryOffset); //loop through using next next entry offset
 }
    
-    // printf("Process ID: %i", (int)info->UniqueProcessId);
+    printf("# of processes: %i\n", procCount);
 
     return TRUE;
 }
@@ -529,7 +538,9 @@ if (!NT_SUCCESS(status)) {
 
 }
 
-BOOL breakpoint(DWORD threadId, BYTE address) {
+
+
+BOOL breakpoint(DWORD threadId, PVOID address, HANDLE hProcess) {
     CONTEXT contextBreak;
         HANDLE hThread;
     //HMODULE hModule = GetModuleHandle("notepad.exe"); // Or LoadLibrary() if it's a DLL
@@ -543,15 +554,38 @@ BOOL breakpoint(DWORD threadId, BYTE address) {
         return TRUE;
     }
 
+    HMODULE hNtdll = GetModuleHandle("ntdll.dll");
+typedef NTSTATUS (NTAPI *pNtProtectVirtualMemory)(
+    HANDLE, PVOID*, PULONG, ULONG, PULONG
+);
+pNtProtectVirtualMemory NtProtectVirtualMemory = 
+    (pNtProtectVirtualMemory)GetProcAddress(hNtdll, "NtProtectVirtualMemory");
+
+//attempt to bypass error 5 damn it doesnt work yet!
+ULONG size = 0x1000;
+ULONG oldProtect;
+NTSTATUS status = NtProtectVirtualMemory(hProcess, &address, &size, PAGE_EXECUTE_READWRITE, &oldProtect);
+
+if (status == STATUS_ACCESS_VIOLATION) {
+    printf ("error, cannot change memory protections\n");
+}
+//printf("status: %lu\n", status);
+
    if (SuspendThread(hThread) == -1) {
     printf("failed to suspend %lu\n", GetLastError());
     return FALSE;
    }
     
     Sleep(1000);
+
+    //checking if thread is still active
     DWORD exitCode;
     GetExitCodeThread(hThread, &exitCode);
+    if (exitCode == 259) {
+        printf("259 - still running\n");
+    } else {
     printf("exit code: %lu\n", exitCode);
+    }
 
     contextBreak.ContextFlags = CONTEXT_DEBUG_REGISTERS;
     //setting conetext can help avoid detection
@@ -562,7 +596,7 @@ BOOL breakpoint(DWORD threadId, BYTE address) {
         contextBreak.Dr7 |= (0 << 22); // 1-byte breakpoint
         SetThreadContext(hThread, &contextBreak);
 
-
+        printf("RIP: %016llX\n", contextBreak.Rip);
         printf("RAX: %016llX\n", contextBreak.Rax);
         printf("RBX: %016llX\n", contextBreak.Rbx);
         printf("RCX: %016llX\n", contextBreak.Rcx);
@@ -600,7 +634,7 @@ BOOL WINAPI debug(LPCVOID param) {
             NULL,
             &si,
             &pi)) {
-        printf("Debugging %s:\n", arg);
+        printf("\033[35mDebugging %s:\033[0m\n", arg);
 
         
 
@@ -623,8 +657,10 @@ BOOL WINAPI debug(LPCVOID param) {
                             
                             
                         char buff[50];
-                        printf("Debug>>");
-            
+                        printf("\033[35mDebug>>\033[0m");
+                        
+                       
+
                         fgets(buff, 49, stdin);
                         size_t sizeBuff = sizeof(buff);
                         buff[strcspn(buff, "\n")] = '\0';
@@ -634,8 +670,8 @@ BOOL WINAPI debug(LPCVOID param) {
                             
                             if (strcmp(buff, "!reg") == 0) {
                                 
-                                printf("Process ID: %lu\n", pi.dwProcessId);
-                                printf("Thread ID: %lu\n", pi.dwThreadId);
+                               printf("Process ID: %lu\n", pi.dwProcessId);
+                               printf("Thread ID: %lu\n", pi.dwThreadId);
                                printf("RIP: %016llX\n", context.Rip);
                                printf("RAX: %016llX\n", context.Rax);
                                printf("RBX: %016llX\n", context.Rbx);
@@ -666,7 +702,7 @@ BOOL WINAPI debug(LPCVOID param) {
     
                                      printf("Object Attributes: %i\n", objInfo.Attributes); 
                                      printf("Granted Access: %08X\n", objInfo.GrantedAccess);
-                                     printf("Handle count: %lu\n", objInfo.HandleCount);
+                                     printf("Handle count: %lu\n", objInfo.HandleCount); 
                                      FreeLibrary(hNtDll);
                                      
                                 } 
@@ -712,6 +748,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                     printf("!mbi     - get mbi info (only works for unprotected process)\n");
                                     printf("!synbreak - break at a debug symbol (not stable yet)\n");
                                     printf("!break   - Set a break and read registers\n");
+                                    printf("!getreg - print registers wherever in memory currently\n");
                                     printf("clear    - Clear the console screen\n");
                                     printf("exit     - Terminate debugging session\n");
                                     printf("help     - Display additional commands\n");
@@ -772,29 +809,34 @@ BOOL WINAPI debug(LPCVOID param) {
                                     printf("Which address to break at?\n");
                                    if  (!fgets(breakBuffer, 99, stdin)) {
                                     printf("buffer to large\n");
+                                    return FALSE;
                                    }
                                     breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
-                                    if (!breakpoint( pi.dwThreadId , breakBuffer)) {
+                                    if (!breakpoint( pi.dwThreadId , breakBuffer, hProcess)) {
                                         printf("failed to set breakpoint, protected memory region.\n");
+                                        
                                     }
                                 }
 
+                                 else if (strcmp(buff, "!getreg") == 0) {
+                                        if (!getThreads(threadId)) {
+                                            printf("error getting threads\n");
+                                            
+                                            
+                                        }
+                                    }
 
-                                
-
+                            } else {
+                                printf("run -help- to see the help menu.\n");
                             }
 
                         }
                                
                                         
-                    }
-                             
+                    }                            
                     //finally calling peb function
                                
                         //Get OBJ attributes mostly 0 but kernel uses this
-                                 
-                 
-                        
                     }
                     
                     WaitForInputIdle(pi.hProcess, INFINITE);
@@ -816,7 +858,6 @@ int main(int argc, char* argv[]) {
         } // Launch debugger inside fiber
           // Cleanup
 
-       
 }
 return 0;
 }
