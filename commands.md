@@ -16,6 +16,7 @@
 ## Memory & Data Analysis
 - `!mbi` - Get MBI info (only works for unprotected process)
 - `!bit` - Display Bitfield data
+- -!cpu' - Get system processor info
 
 ## General Commands
 - `clear` - Clear the console screen
