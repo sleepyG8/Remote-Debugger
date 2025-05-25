@@ -36,28 +36,20 @@ Facts:
 
 (any examples I found were from 2015 and 2008 and written in c++ so I wrote this in C for speed and windows nt apis are written in C so lets keep it native) and windows internals
 
-(checks for debugging with the PEB)
+-(checks for debugging with the PEB)
 
-(stealthy hides debug registers)
+-(stealthy hides debug registers)
 
-(capable of pulling register addresses for further examining)
+-(capable of pulling register addresses for further examining)
 
-(built from scratch)
+-(built from scratch)
 
 Sleepy :)
 
 To do: 
 
-+make into terminal commands/loop(done) done but needs made better
-
-+add custom breakpoints add addresses to go deeper(easy)
-
-+better logo (last)
-
-+more optimization its already fast but ill add a seperate thread from the while loop to execute commands like !break, !clear, !atrributes, !peb, !teb, !access (done)
-
 +A kernel driver in the future to access kernel structures
 
-+IAT inspection
++IAT inspection just needs added 
 
 +add my clipboard feature
