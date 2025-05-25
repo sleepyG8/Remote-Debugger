@@ -1,4 +1,19 @@
 [![GitHub stars](https://img.shields.io/github/stars/sleepyG8/Remote-Debugger?style=social)](https://github.com/sleepyG8/Remote-Debugger/stargazers)
+<h1 align="center">🧠 Remote-Debugger</h1>
+
+<p align="center">
+  <strong>Advanced low-level debugger designed for remote process analysis, reverse engineering, and research-grade control.</strong><br>
+  <a href="https://github.com/sleepyG8/Remote-Debugger/stargazers">
+    <img src="https://img.shields.io/github/stars/sleepyG8/Remote-Debugger?style=social" alt="GitHub stars">
+  </a>
+  <br><br>
+  <img src="https://img.shields.io/badge/built%20with-C%20%7C%20WinAPI-blue?style=flat-square">
+  <img src="https://img.shields.io/badge/platform-Windows-orange?style=flat-square">
+  <img src="https://img.shields.io/badge/status-active-brightgreen?style=flat-square">
+</p>
+
+---
+
 # Remote-Debugger
 A advanced debugger I wrote capable of debugging processes, this is a work in progress and will be updated frequently for more features
 
