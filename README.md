@@ -1,3 +1,4 @@
+![Visitor Badge](https://komarev.com/ghpvc/?username=sleepyG8&label=Visitors&color=0e75b6&style=flat)
 # Remote-Debugger
 A advanced debugger I wrote capable of debugging processes, this is a work in progress and will be updated frequently for more features
 
