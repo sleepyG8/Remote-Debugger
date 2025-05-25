@@ -1,4 +1,3 @@
-[![GitHub stars](https://img.shields.io/github/stars/sleepyG8/Remote-Debugger?style=social)](https://github.com/sleepyG8/Remote-Debugger/stargazers)
 <h1 align="center">🧠 Remote-Debugger</h1>
 
 <p align="center">
