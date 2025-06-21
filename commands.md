@@ -5,6 +5,7 @@
 - `!getreg` - Print registers at current memory location
 - `!break` - Set a breakpoint and read registers
 - `!synbreak` - Set breakpoint at debug symbol (experimental)
+- `!dump` - Dump a raw address (sometimes error 5, run another instance and boom)
 
 ## Process & System Info
 - `!proc` - Display all running processes
