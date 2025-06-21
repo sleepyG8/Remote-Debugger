@@ -79,6 +79,49 @@ BOOL logo() {
         return 0;
     }
 
+BOOL readRawAddr(HANDLE hProcess, LPVOID base) {
+ 
+    MEMORY_BASIC_INFORMATION mbi = {0};
+if (VirtualQueryEx(hProcess, base, &mbi, sizeof(mbi)) == 0) {
+    printf("VirtualQueryEx failed: %lu\n", GetLastError());
+    return FALSE;
+}
+
+printf("Size: %lu\n", mbi.RegionSize);
+printf("Region base: %p\n", mbi.BaseAddress);
+printf("Base: %p\n", base);
+
+    //SIZE_T bytesToRead = min(256, mbi.RegionSize - ((SIZE_T)base - (SIZE_T)mbi.BaseAddress));
+    SIZE_T bytesToRead = 200;
+
+        BYTE *buff = (BYTE*)malloc(bytesToRead);
+    if (!buff) {
+        printf("Memory allocation failed!\n");
+        return FALSE;
+    }
+
+    DWORD bytesRead = 0;
+    // Read memory
+    if (ReadProcessMemory(hProcess, base, buff, bytesToRead, &bytesRead)) {
+        printf("Read full Memory region\n");
+    } else {
+        printf("Read partial memory\n");
+    }
+    // Print 100 raw memory bytes
+    for (SIZE_T i = 0; i < 100; i++) {
+        if (isprint(buff[i])) {  // Very useful to print only valid chars
+        printf("%c ", buff[i]);;
+    }
+}
+    printf("\n");
+
+    printf("Raw: \n");
+    for (SIZE_T i = 0; i < 100; i++) {
+    printf("%02X ", buff[i]);        
+    }
+    free(buff); // Free allocated memory
+    return TRUE;
+}
 
 BOOL getThreads(DWORD *threadId) {
     HANDLE hThread;
@@ -247,51 +290,33 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread) {
    // printf("DLLs: %p", ldrData.InLoadOrderModuleList);
     //PMY_LDR_DATA_TABLE_ENTRY ldr = (PMY_LDR_DATA_TABLE_ENTRY)peb.LoaderData;
 
-    LIST_ENTRY currentEntry = ldrData.InMemoryOrderModuleList;
-    do {
-        
+    //printf("LI: %p", ldrData.InMemoryOrderModuleList.Flink);
+    
+    LIST_ENTRY *currentEntry = (LIST_ENTRY*)ldrData.InMemoryOrderModuleList.Flink;
+    LIST_ENTRY *pLdrCurrentNode = ldrData.InMemoryOrderModuleList.Flink; 
+    
+   
+        DWORD bytes;
         LDR_DATA_TABLE_ENTRY ldrEntry = {0};
-        if (!ReadProcessMemory(hProcess, ldrData.InMemoryOrderModuleList.Flink, &ldrEntry, sizeof(ldrEntry), NULL)) {
-            printf("Failed to read LDR_DATA_TABLE_ENTRY (Error %lu)\n", GetLastError());
-            return FALSE;
-            break;
-        }
-
-        wprintf(L"Next Entry: %p\n", ldrEntry.InMemoryOrderLinks.Flink);
-
-        
-      /*  MEMORY_BASIC_INFORMATION mbi = {0};
-        if (mbi.State != MEM_COMMIT) {
-            printf("Memory not committed, skipping!\n");
+        if (!ReadProcessMemory(hProcess, pLdrCurrentNode, &ldrEntry, sizeof(LDR_DATA_TABLE_ENTRY), &bytes)) {
+            printf("Error reading memory %lu\n", GetLastError());
             return FALSE;
         }
-if (ldrEntry.DllBase > 0 && VirtualQueryEx(hProcess, ldrEntry.DllBase, &mbi, sizeof(mbi))) {
-    printf("Image Base Address: %p\n", mbi.AllocationBase);
-} else {
-    printf("error %lu", GetLastError());
-}*/
 
 
-        // Print DLL details
-        WCHAR dllName[MAX_PATH];
-        wprintf(L"Length DLL fullname: %p\n", ldrEntry.FullDllName.Buffer);
-        if ( ldrEntry.FullDllName.Length > 0 &&
-            ReadProcessMemory(hProcess, ldrEntry.FullDllName.Buffer, &dllName, ldrEntry.FullDllName.Length, NULL)) {
-            dllName[ldrEntry.FullDllName.Length / sizeof(WCHAR)] = L'\0'; // Null-terminate the string
-            wprintf(L"Module: %ls\n", dllName);
-        } else {
-            printf("Must be admin to pull modules!\n");
-            return FALSE;
-            
+        WCHAR dllName[MAX_PATH] = {0};
+        if (!ReadProcessMemory(hProcess, ldrEntry.FullDllName.Buffer, &dllName, ldrEntry.FullDllName.Length, NULL)) {
+            printf("Error reading dll name\n");
+            return 1;
         }
 
-        
+        //printf("Bytes %lu\n", bytes);
 
-        currentEntry = *ldrEntry.InMemoryOrderLinks.Flink;
-
-    } while (currentEntry.Flink != &ldrData.InMemoryOrderModuleList);
-    return TRUE;
-}   
+        wprintf(L"Module: %p\n", dllName);
+    
+        return TRUE;
+    
+    }
 
 
 BOOL GetSecurityDescriptor(HANDLE hObject) {
@@ -445,6 +470,7 @@ while(info) {
     //printf("Next Entry offest: %lu\n", info->NextEntryOffset);
     printf("Handle count: %lu\n", info->HandleCount);
    // printf("Memory Usage: %llu\n", info->VirtualSize);
+    printf("Process ID: %i\n", (int)info->UniqueProcessId);
     printf("+++++++++++++++++++++++++++++++++++++++++++\n");
     procCount++;
     if (info->NextEntryOffset == 0) break;
@@ -593,7 +619,7 @@ BOOL breakpoint(DWORD threadId, PVOID address, HANDLE hProcess) {
 
     //DWORD threadId = 5652; // Replace with the actual thread ID
 
-    hThread = OpenThread(THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME | THREAD_QUERY_INFORMATION, FALSE, threadId);
+    hThread = OpenThread(THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME | THREAD_QUERY_INFORMATION | PROCESS_SUSPEND_RESUME, FALSE, threadId);
     if (hThread == NULL) {
         printf("Error: Unable to open thread.\n");
         return TRUE;
@@ -632,7 +658,7 @@ if (status == STATUS_ACCESS_VIOLATION) {
     printf("exit code: %lu\n", exitCode);
     }
 
-    contextBreak.ContextFlags = CONTEXT_DEBUG_REGISTERS;
+    contextBreak.ContextFlags = CONTEXT_FULL | CONTEXT_AMD64;
     //setting conetext can help avoid detection
     if (GetThreadContext(hThread, &contextBreak)) {
         contextBreak.Dr1 = address;
@@ -658,6 +684,7 @@ if (status == STATUS_ACCESS_VIOLATION) {
 
     return TRUE;
 }
+
 
 BOOL WINAPI debug(LPCVOID param) {
 
@@ -794,7 +821,6 @@ BOOL WINAPI debug(LPCVOID param) {
                                     printf("!synbreak - break at a debug symbol (not stable yet)\n");
                                     printf("!break   - Set a break and read registers\n");
                                     printf("!getreg - print registers wherever in memory currently\n");
-                                    printf("!cpu     - Get CPU data for each processor on the system\n");
                                     printf("clear    - Clear the console screen\n");
                                     printf("exit     - Terminate debugging session\n");
                                     printf("help     - Display additional commands\n");
@@ -877,6 +903,22 @@ BOOL WINAPI debug(LPCVOID param) {
                                         }
                                     }
 
+                                    else if (strcmp(buff, "!dump") == 0) {
+                                    LPVOID *breakBuffer = (LPVOID*)malloc(100 * sizeof(LPVOID));
+                                    if (!breakBuffer) {
+                                        printf("Memory allocation error\n");
+                                    }
+                                    printf("Which addr to get?\n");
+                                   if  (!fgets(breakBuffer, 99, stdin)) {
+                                    printf("buffer to large\n");
+                                   }
+                                    breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
+
+                                    if (!readRawAddr(hProcess, breakBuffer)) {
+                                        printf("Error invalid address\n");
+                                    }
+                                    }
+
                             } else {
                                 printf("run -help- to see the help menu.\n");
                             }
@@ -896,7 +938,6 @@ BOOL WINAPI debug(LPCVOID param) {
                     return TRUE;
 
 }
-
 
 int main(int argc, char* argv[]) {
     LPVOID fiberMain = ConvertThreadToFiber(NULL); 
