@@ -10,6 +10,7 @@
 
 #pragma comment(lib, "User32.lib")
 #pragma comment(lib, "Advapi32.lib")
+#pragma comment(lib, "Psapi.lib")
 
 CONTEXT context;
 
@@ -202,6 +203,8 @@ typedef struct _MYPEB {
 } MYPEB;
 
 MYPEB pbi;
+WCHAR dllName[MAX_PATH] = {0};
+
 BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread) {
     SuspendThread(thread);
     HMODULE hNtDll = GetModuleHandle("ntdll.dll");
@@ -303,8 +306,6 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread) {
             return FALSE;
         }
 
-
-        WCHAR dllName[MAX_PATH] = {0};
         if (!ReadProcessMemory(hProcess, ldrEntry.FullDllName.Buffer, &dllName, ldrEntry.FullDllName.Length, NULL)) {
             printf("Error reading dll name\n");
             return 1;
@@ -313,6 +314,7 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread) {
         //printf("Bytes %lu\n", bytes);
 
         wprintf(L"Module: %p\n", dllName);
+
     
         return TRUE;
     
@@ -685,6 +687,89 @@ if (status == STATUS_ACCESS_VIOLATION) {
     return TRUE;
 }
 
+BOOL getVariables(DWORD procId) {
+
+BYTE *baseAddress = (BYTE*)malloc(100 * sizeof(BYTE));
+
+HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, procId);
+if (!hProcess) {
+    printf("error opening process %lu\n", GetLastError());
+    return FALSE;
+}
+
+//getting base address
+HMODULE hMods[1024];
+DWORD cbNeeded;
+if (EnumProcessModules(hProcess, hMods, sizeof(hMods), &cbNeeded)) {
+    baseAddress = (BYTE*)hMods[0]; 
+} else {
+    printf("error enumerating base address\n");
+    return FALSE;
+}
+
+//reading dos header
+IMAGE_DOS_HEADER dh;
+
+if (!ReadProcessMemory(hProcess, baseAddress, &dh, sizeof(IMAGE_DOS_HEADER), NULL)) {
+    printf("error reading memory of process ID\n");
+   return FALSE;
+}
+
+//checks for a valid PE file
+if (dh.e_magic != IMAGE_DOS_SIGNATURE) {
+    printf("error 3 %lu\n", GetLastError());
+    return FALSE;
+} else {
+    printf("Valdid PE file: YES-%x\n", dh.e_magic);
+}
+
+//getting nt headers
+IMAGE_NT_HEADERS nt;
+if (!ReadProcessMemory(hProcess, (BYTE*)baseAddress + dh.e_lfanew, &nt, sizeof(IMAGE_NT_HEADERS), NULL)) {
+    printf("error reading NT headers from remote process\n");
+    return FALSE;
+}
+
+//getting offset and starting a for loop to get all sections
+DWORD sectionOffset = dh.e_lfanew + sizeof(IMAGE_NT_HEADERS);
+IMAGE_SECTION_HEADER section;
+
+//good touch
+printf("Scanning");
+ for (int i=0; i < 3; i++) {
+     printf(".");
+     Sleep(500);
+    }
+    printf("\n");
+
+//looping through
+for (int i=0; i < nt.FileHeader.NumberOfSections; i++) {
+
+    
+if (!ReadProcessMemory(hProcess, (BYTE*)baseAddress + sectionOffset + (i * sizeof(IMAGE_SECTION_HEADER)), &section, sizeof(IMAGE_SECTION_HEADER), NULL)) {
+    printf("Error reading section memory %lu", GetLastError());
+    }
+
+printf("+ %s\n", (char*)section.Name);
+
+    printf("Section: %s | Address: 0x%X | Size: %d\n", section.Name, section.VirtualAddress, section.SizeOfRawData);
+
+    char buffer[1025];
+    if (!ReadProcessMemory(hProcess, (BYTE*)baseAddress + section.VirtualAddress, &buffer, sizeof(buffer), NULL)) {
+        printf("Error reading data %lu\n", GetLastError());
+    } else {
+            for (int i = 0; i < sizeof(buffer); i++) {
+            if (isprint(buffer[i])) {  // Very useful to print only valid chars
+        printf("%c ", buffer[i]);
+    }
+    }
+    printf("\n");
+    printf("++++++++++++++++++++++++++++++++++\n");
+    }
+    
+}
+return TRUE;
+}
 
 BOOL WINAPI debug(LPCVOID param) {
 
@@ -917,6 +1002,12 @@ BOOL WINAPI debug(LPCVOID param) {
                                     if (!readRawAddr(hProcess, breakBuffer)) {
                                         printf("Error invalid address\n");
                                     }
+                                    }
+
+                                    else if (strcmp(buff, "!var") == 0) {
+                                        if (!getVariables(pi.dwProcessId)) {
+                                            printf("Error enumerating sections\n");
+                                        }
                                     }
 
                             } else {
