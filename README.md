@@ -1,4 +1,4 @@
-<h1 align="center">🧠 Remote-Debugger</h1>
+<h1 align="center">🧠 Glyph - A sneaky debugger</h1>
 
 <p align="center">
   <strong>Advanced low-level debugger designed for remote process analysis, reverse engineering, and research-grade control.</strong><br>
