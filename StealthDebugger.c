@@ -80,10 +80,7 @@ BOOL logo() {
         return 0;
     }
 
-BOOL readRawAddr(HANDLE hProcess, LPVOID base) {
-
-    //SIZE_T bytesToRead = min(256, mbi.RegionSize - ((SIZE_T)base - (SIZE_T)mbi.BaseAddress));
-    SIZE_T bytesToRead = 200;
+BOOL readRawAddr(HANDLE hProcess, LPVOID base, SIZE_T bytesToRead) {
 
     BYTE *buff = (BYTE*)malloc(bytesToRead);
     if (!buff) {
@@ -96,7 +93,7 @@ BOOL readRawAddr(HANDLE hProcess, LPVOID base) {
     DWORD bytesRead = 0;
     // Read memory
     if (ReadProcessMemory(hProcess, base, buff, bytesToRead, &bytesRead)) {
-        printf("Read full Memory region\n");
+        printf("[+] Read Memory - Base: %p\n", base);
     } else {
         printf("[+] Read partial memory - Region base: %p\n", base);
     }
@@ -282,7 +279,6 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread) {
     if (!ReadProcessMemory(hProcess, (LPCVOID)pbi.Ldr , &ldrData, sizeof(ldrData), &bytesread)) {
             printf("error getting ldr, retry...\n");
             return FALSE;
-           // return 1;
     }
     //PPEB pebbers = (PPEB)pbi.PebBaseAddress;
     // PPEB 
@@ -291,8 +287,8 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread) {
 
     //printf("LI: %p", ldrData.InMemoryOrderModuleList.Flink);
     
-    LIST_ENTRY *currentEntry = (LIST_ENTRY*)ldrData.InMemoryOrderModuleList.Flink;
-    LIST_ENTRY *pLdrCurrentNode = ldrData.InMemoryOrderModuleList.Flink; 
+        LIST_ENTRY *currentEntry = (LIST_ENTRY*)ldrData.InMemoryOrderModuleList.Flink;
+        LIST_ENTRY *pLdrCurrentNode = ldrData.InMemoryOrderModuleList.Flink; 
     
    
         DWORD bytes;
@@ -306,16 +302,12 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread) {
             printf("Error reading dll name\n");
             return 1;
         }
-
         //printf("Bytes %lu\n", bytes);
-
         wprintf(L"Module: %p\n", dllName);
 
-    
         return TRUE;
     
     }
-
 
 BOOL GetSecurityDescriptor(HANDLE hObject) {
     HMODULE hAdvapi32 = LoadLibrary("Advapi32.dll");
@@ -424,11 +416,8 @@ FreeLibrary(hNtDll);
 
 #define STATUS_INFO_LENGTH_MISMATCH ((NTSTATUS)0xC0000004)
 
-
 typedef NTSTATUS(NTAPI* pNtQuerySystemInformation)(
     SYSTEM_INFORMATION_CLASS, PVOID, ULONG, PULONG);
-
-
 
 BOOL listProcesses() {
           HMODULE hNtDll = GetModuleHandle("ntdll.dll");
@@ -805,24 +794,19 @@ BOOL WINAPI debug(LPCVOID param) {
 
             GetPEBFromAnotherProcess(hProcess, pi.dwThreadId);
             printf("thread address/ID: %p\n", &threadId);
-                    while (1) {
-                           
+                    while (1) {                           
                             
-                            
-                        char buff[50];
-                        printf("\033[35mDebug>>\033[0m");
-                        
-                       
-
-                        fgets(buff, 49, stdin);
-                        size_t sizeBuff = sizeof(buff);
-                        buff[strcspn(buff, "\n")] = '\0';
-                        if (buff != NULL) {
+                            char buff[50];
+                            printf("\033[35mDebug>>\033[0m");
+                                            
+                            fgets(buff, 49, stdin);
+                            size_t sizeBuff = sizeof(buff);
+                            buff[strcspn(buff, "\n")] = '\0';
+                            if (buff != NULL) {
             
                             //buff[sizeBuff + 1] = '\0';
                             
                             if (strcmp(buff, "!reg") == 0) {
-                                
                                printf("Process ID: %lu\n", pi.dwProcessId);
                                printf("Thread ID: %lu\n", pi.dwThreadId);
                                printf("RIP: %016llX\n", context.Rip);
@@ -834,30 +818,24 @@ BOOL WINAPI debug(LPCVOID param) {
                             
                            else if (strcmp(buff, "!attr") == 0) {
                                            //geting object info
-                                typedef NTSTATUS (NTAPI *pNtQueryObject)(
-                             HANDLE, OBJECT_INFORMATION_CLASS, PVOID, ULONG, PULONG
-                                                     );
+                            typedef NTSTATUS (NTAPI *pNtQueryObject)(HANDLE, OBJECT_INFORMATION_CLASS, PVOID, ULONG, PULONG);
         
-                             HMODULE hNtDll = LoadLibrary("ntdll.dll");
-                    pNtQueryObject NtQueryObject = (pNtQueryObject)GetProcAddress(hNtDll, "NtQueryObject");
+                            HMODULE hNtDll = LoadLibrary("ntdll.dll");
+                            pNtQueryObject NtQueryObject = (pNtQueryObject)GetProcAddress(hNtDll, "NtQueryObject");
     
-                           PUBLIC_OBJECT_BASIC_INFORMATION objInfo;
+                            PUBLIC_OBJECT_BASIC_INFORMATION objInfo;
     
-                              // HANDLE hObject = GetCurrentProcess();
-                                  ULONG size;
-                 NTSTATUS status = NtQueryObject(hProcess, ObjectBasicInformation, &objInfo, sizeof(objInfo), &size);
+                            // HANDLE hObject = GetCurrentProcess();
+                            ULONG size;
+                            NTSTATUS status = NtQueryObject(hProcess, ObjectBasicInformation, &objInfo, sizeof(objInfo), &size);
         
-                                   if (!GetSecurityDescriptor(hProcess)) {
-                                              printf("error\n");
-                                   }
-                                                             
-    
-    
-                                     printf("Object Attributes: %i\n", objInfo.Attributes); 
-                                     printf("Granted Access: %08X\n", objInfo.GrantedAccess);
-                                     printf("Handle count: %lu\n", objInfo.HandleCount); 
-                                     FreeLibrary(hNtDll);
-                                     
+                            if (!GetSecurityDescriptor(hProcess)) {
+                                  printf("error\n");
+                                }
+                                printf("Object Attributes: %i\n", objInfo.Attributes); 
+                                printf("Granted Access: %08X\n", objInfo.GrantedAccess);
+                                printf("Handle count: %lu\n", objInfo.HandleCount); 
+                                FreeLibrary(hNtDll);     
                                 } 
 
                                 else if (strcmp(buff,"!peb") == 0) {
@@ -906,14 +884,14 @@ BOOL WINAPI debug(LPCVOID param) {
                                     printf("exit     - Terminate debugging session\n");
                                     printf("help     - Display additional commands\n");
                                     printf("==========================\n");
-
                                 }
 
-                                    else if (strcmp(buff, "!proc") == 0) {
+                                else if (strcmp(buff, "!proc") == 0) {
                                     printf("Listing system wide process information:\n");
                                     listProcesses();
                                 }
 
+                                // bit stuff
                                 else if (strcmp(buff, "!bit") == 0) {
                                         printf("Is Protected Process?: %lu\n", pbi.IsProtectedProcess);
                                         printf("Light Protected?: %lu\n", pbi.IsProtectedProcessLight);
@@ -928,11 +906,11 @@ BOOL WINAPI debug(LPCVOID param) {
                                         printf("Memory allocation error\n");
                                     }
                                     printf("Which symbol to break at?\n");
-                                   if  (!fgets(breakBuffer, 99, stdin)) {
+                                    if  (!fgets(breakBuffer, 99, stdin)) {
                                     printf("buffer to large\n");
-                                   }
+                                    }
                                     breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
-                                  // printf("testing\n");
+                                    // pdb break
                                     if (!setBreakpointatSymbol(hProcess, breakBuffer, arg)) {
                                         printf("Cannot set breakpoint must be from a .pdb file\n");
                                     }
@@ -940,14 +918,19 @@ BOOL WINAPI debug(LPCVOID param) {
                                 }
 
                                 else if (strcmp(buff, "!mbi") == 0) {
-                                            LPVOID *breakBuffer = (LPVOID*)malloc(100 * sizeof(LPVOID));
+                                    LPVOID *breakBuffer = (LPVOID*)malloc(100 * sizeof(LPVOID));
+                                    
                                     if (!breakBuffer) {
                                         printf("Memory allocation error\n");
                                     }
+
                                     printf("Which addr to get?\n");
-                                   if  (!fgets(breakBuffer, 99, stdin)) {
+
+                                    if  (!fgets(breakBuffer, 99, stdin)) {
                                     printf("buffer to large\n");
-                                   }
+                                    }
+
+                                   // getMBI, region checker
                                     breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
                                     if (!getMBI(hProcess, breakBuffer)) {
                                         printf("error");
@@ -959,23 +942,26 @@ BOOL WINAPI debug(LPCVOID param) {
                                     if (!breakBuffer) {
                                         printf("Memory allocation error\n");
                                     }
+                                    
                                     printf("Which address to break at?\n");
-                                   if  (!fgets(breakBuffer, 99, stdin)) {
+                                   
+                                    if  (!fgets(breakBuffer, 99, stdin)) {
                                     printf("buffer to large\n");
                                     return FALSE;
-                                   }
+                                    }
+
+                                    // Break
                                     breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
                                     if (!breakpoint( pi.dwThreadId , breakBuffer, hProcess)) {
                                         printf("failed to set breakpoint, protected memory region.\n");
-                                        
                                     }
+
                                 }
 
                                  else if (strcmp(buff, "!getreg") == 0) {
-                                        if (!getThreads(threadId)) {
+                                            if (!getThreads(threadId)) {
                                             printf("error getting threads\n");
-                                            
-                                        }
+                                            }
                                     }
 
                                     else if (strcmp(buff, "!cpu") == 0) {
@@ -985,52 +971,56 @@ BOOL WINAPI debug(LPCVOID param) {
                                     }
 
                                     else if (strcmp(buff, "!dump") == 0) {
-                                        char* breakBuffer[100];
+                                        char breakBuffer[100] = {0};
                                         if (!breakBuffer) {
                                         printf("Memory allocation error\n");
-                                    }
-                                    printf("Which addr to get?\n");
-                                   if  (!fgets(breakBuffer, 99, stdin)) {
-                                    printf("buffer to large\n");
-                                   }
-                                    breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
+                                        }
 
+                                        printf("Which addr to get?\n");
+
+                                        if (!fgets(breakBuffer, 99, stdin)) {
+                                         printf("buffer to large\n");
+                                        }
+
+                                        breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
+
+                                        // Had to add for correct formating
                                         ULONGLONG addr = 0;
-                                    if (sscanf(breakBuffer, "%llx", &addr) != 1 || addr == 0) {
-                                      printf("Error: invalid address '%s'\n", breakBuffer);
+                                        if (sscanf(breakBuffer, "%llx", &addr) != 1 || addr == 0) {
+                                        printf("Error: invalid address '%s'\n", breakBuffer);
                                         return FALSE;
-                                         }
-                                    printf("buff 1: %p\n", addr);
+                                        }
 
-                                    if (!readRawAddr(hProcess, (LPVOID)addr)) {
+                                        // Read Raw function 
+                                        if (!readRawAddr(hProcess, (LPVOID)addr, 50)) {
                                         printf("Error invalid address\n");
-                                    }
+                                        }
                                     }
 
                                     else if (strcmp(buff, "!var") == 0) {
                                         if (!getVariables(pi.dwProcessId)) {
                                             printf("Error enumerating sections\n");
-                                        }
+                                            }
                                     }
 
-                            } else {
-                                printf("run -help- to see the help menu.\n");
-                            }
+                                    else if (strcmp(buff, "kill") == 0) {
+                                       if  (!TerminateProcess(hProcess, 0)) {
+                                            if (GetLastError() == 5) {
+                                                printf("Cannot terminate this program\n");
+                                            }
+                                            }
+                                         }
 
-                        }
-                               
-                                        
-                    }                            
-                    //finally calling peb function
-                               
-                        //Get OBJ attributes mostly 0 but kernel uses this
+                                     } else {
+                                         printf("run -help- to see the help menu.\n");
+                                        }
+                            }                  
+                        }                                            
                     }
-                    
-                    WaitForInputIdle(pi.hProcess, INFINITE);
-                    CloseHandle(pi.hProcess);
-                    CloseHandle(pi.hThread);
-                    return TRUE;
-
+    WaitForInputIdle(pi.hProcess, INFINITE);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    return TRUE;
 }
 
 int main(int argc, char* argv[]) {
