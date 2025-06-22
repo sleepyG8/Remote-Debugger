@@ -81,34 +81,27 @@ BOOL logo() {
     }
 
 BOOL readRawAddr(HANDLE hProcess, LPVOID base) {
- 
-    MEMORY_BASIC_INFORMATION mbi = {0};
-if (VirtualQueryEx(hProcess, base, &mbi, sizeof(mbi)) == 0) {
-    printf("VirtualQueryEx failed: %lu\n", GetLastError());
-    return FALSE;
-}
-
-printf("Size: %lu\n", mbi.RegionSize);
-printf("Region base: %p\n", mbi.BaseAddress);
-printf("Base: %p\n", base);
 
     //SIZE_T bytesToRead = min(256, mbi.RegionSize - ((SIZE_T)base - (SIZE_T)mbi.BaseAddress));
     SIZE_T bytesToRead = 200;
 
-        BYTE *buff = (BYTE*)malloc(bytesToRead);
+    BYTE *buff = (BYTE*)malloc(bytesToRead);
     if (!buff) {
         printf("Memory allocation failed!\n");
         return FALSE;
     }
+
+    printf("Reading from: %p\n", base);
 
     DWORD bytesRead = 0;
     // Read memory
     if (ReadProcessMemory(hProcess, base, buff, bytesToRead, &bytesRead)) {
         printf("Read full Memory region\n");
     } else {
-        printf("Read partial memory\n");
+        printf("[+] Read partial memory - Region base: %p\n", base);
     }
     // Print 100 raw memory bytes
+    printf("[+] Chars:\n");
     for (SIZE_T i = 0; i < 100; i++) {
         if (isprint(buff[i])) {  // Very useful to print only valid chars
         printf("%c ", buff[i]);;
@@ -116,10 +109,13 @@ printf("Base: %p\n", base);
 }
     printf("\n");
 
-    printf("Raw: \n");
+    printf("[+] Raw: \n");
     for (SIZE_T i = 0; i < 100; i++) {
     printf("%02X ", buff[i]);        
     }
+    
+    printf("\n");
+
     free(buff); // Free allocated memory
     return TRUE;
 }
@@ -989,8 +985,8 @@ BOOL WINAPI debug(LPCVOID param) {
                                     }
 
                                     else if (strcmp(buff, "!dump") == 0) {
-                                    LPVOID *breakBuffer = (LPVOID*)malloc(100 * sizeof(LPVOID));
-                                    if (!breakBuffer) {
+                                        char* breakBuffer[100];
+                                        if (!breakBuffer) {
                                         printf("Memory allocation error\n");
                                     }
                                     printf("Which addr to get?\n");
@@ -999,7 +995,14 @@ BOOL WINAPI debug(LPCVOID param) {
                                    }
                                     breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
 
-                                    if (!readRawAddr(hProcess, breakBuffer)) {
+                                        ULONGLONG addr = 0;
+                                    if (sscanf(breakBuffer, "%llx", &addr) != 1 || addr == 0) {
+                                      printf("Error: invalid address '%s'\n", breakBuffer);
+                                        return FALSE;
+                                         }
+                                    printf("buff 1: %p\n", addr);
+
+                                    if (!readRawAddr(hProcess, (LPVOID)addr)) {
                                         printf("Error invalid address\n");
                                     }
                                     }
