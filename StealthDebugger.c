@@ -91,17 +91,15 @@ BOOL readRawAddr(HANDLE hProcess, LPVOID base, SIZE_T bytesToRead) {
         return FALSE;
     }
 
-    printf("Reading from: %p\n", base);
-
     DWORD bytesRead = 0;
     // Read memory
     if (ReadProcessMemory(hProcess, base, buff, bytesToRead, &bytesRead)) {
-        printf("[+] Read Memory - Base: %p\n", base);
+        printf("\x1b[92m[!]\x1b[0m Read Memory - Base: %p\n", base);
     } else {
-        printf("[+] Read partial memory - Region base: %p\n", base);
+        printf("\x1b[92m[!]\x1b[0m Read partial memory - Region base: %p\n", base);
     }
     // Print 100 raw memory bytes
-    printf("[+] Chars:\n");
+    printf("\x1b[92m[+]\x1b[0m Chars:\n");
     for (SIZE_T i = 0; i < 100; i++) {
         if (isprint(buff[i])) {  // Very useful to print only valid chars
         printf("%c ", buff[i]);;
@@ -109,7 +107,7 @@ BOOL readRawAddr(HANDLE hProcess, LPVOID base, SIZE_T bytesToRead) {
 }
     printf("\n");
 
-    printf("[+] Raw: \n");
+    printf("\x1b[92m[+]\x1b[0m Raw: \n");
     for (SIZE_T i = 0; i < 100; i++) {
     printf("%02X ", buff[i]);        
     }
@@ -122,10 +120,6 @@ BOOL readRawAddr(HANDLE hProcess, LPVOID base, SIZE_T bytesToRead) {
 
 BOOL getThreads(DWORD *threadId) {
     HANDLE hThread;
-    //HMODULE hModule = GetModuleHandle("notepad.exe"); // Or LoadLibrary() if it's a DLL
-//LPVOID targetAddr = GetProcAddress(hModule, "TargetFunction");
-
-    //DWORD threadId = 5652; // Replace with the actual thread ID
 
     hThread = OpenThread(THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME, FALSE, threadId);
     if (hThread == NULL) {
@@ -146,10 +140,11 @@ BOOL getThreads(DWORD *threadId) {
         SetThreadContext(hThread, &context);
 
 
-        printf("RAX: %016llX\n", context.Rax);
-        printf("RBX: %016llX\n", context.Rbx);
-        printf("RCX: %016llX\n", context.Rcx);
-        printf("RDX: %016llX\n", context.Rdx);
+        printf("RIP: 0x%016llX\n", context.Rip);
+        printf("RAX: 0x%016llX\n", context.Rax);
+        printf("RBX: 0x%016llX\n", context.Rbx);
+        printf("RCX: 0x%016llX\n", context.Rcx);
+        printf("RDX: 0x%016llX\n", context.Rdx);
 
     } else {
         printf("Error: Unable to get thread context. %lu\n", GetLastError());
@@ -180,6 +175,17 @@ typedef struct _MYPEB {
             BYTE IsLongPathAwareProcess : 1;
         };
     };
+    union {
+    ULONG CrossProcessFlags;
+    struct {
+        ULONG ProcessInJob : 1;
+        ULONG ProcessInitializing : 1;
+        ULONG ProcessUsingVEH : 1;
+        ULONG ProcessUsingVCH : 1;
+        ULONG ProcessUsingFTH : 1;
+        ULONG ReservedBits0 : 27;
+    };
+};
     PVOID Reserved3[2];
     PPEB_LDR_DATA Ldr;
     PRTL_USER_PROCESS_PARAMETERS ProcessParameters;
@@ -226,7 +232,7 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread) {
     }
     
    // printf("PEB Address of the target process: %s\n", proc.PebBaseAddress);
-    printf("Peb address: %p", proc.PebBaseAddress);
+    printf("\x1b[92m[+]\x1b[0m Peb address: 0x%p", proc.PebBaseAddress);
     peb.pebaddr = proc.PebBaseAddress;
    
    
@@ -235,7 +241,7 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread) {
 
     PEB_LDR_DATA ldrData;
     if (ReadProcessMemory(hProcess, proc.PebBaseAddress, &pbi, sizeof(pbi), NULL)) {
-        printf("\nprocess ID: %lu\n", (unsigned long)proc.UniqueProcessId);
+        printf("\n\x1b[92m[+]\x1b[0m process ID: %lu\n", (unsigned long)proc.UniqueProcessId);
     } else {
         printf("Failed to read PEB from the target process (Error %lu)\n", GetLastError());
         return FALSE;
@@ -261,7 +267,7 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread) {
         if (!ReadProcessMemory(hProcess, parameters.ImagePathName.Buffer, imagePath, parameters.ImagePathName.Length, NULL)) {
             printf("Error reading ImagePathName buffer\n");
         } else {
-            wprintf(L"Path: %ls\n", imagePath);
+            wprintf(L"\x1b[92m[+]\x1b[0m Path: %ls\n", imagePath);
             myparams.fullPath = _wcsdup(imagePath);
            // free(myparams.fullPath);
         }
@@ -273,12 +279,12 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread) {
         return FALSE;
     }
 
-    wprintf(L"Command line: %ls\n", cmd);
+    wprintf(L"\x1b[92m[+]\x1b[0m Command line: %ls\n", cmd);
     
     size_t bytesread;
 
     //printf("%p", peb.LoaderData->Length);
-    printf("Ldr address: %p\n", pbi.Ldr);
+    printf("\x1b[92m[+]\x1b[0m Ldr address: 0x%p\n", pbi.Ldr);
     if (!ReadProcessMemory(hProcess, (LPCVOID)pbi.Ldr , &ldrData, sizeof(ldrData), &bytesread)) {
             printf("error getting ldr, retry...\n");
             return FALSE;
@@ -306,7 +312,7 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread) {
             return 1;
         }
         //printf("Bytes %lu\n", bytes);
-        wprintf(L"Module: %p\n", dllName);
+        wprintf(L"\x1b[92m[+]\x1b[0m Module: 0x%p\n", dllName);
 
         return TRUE;
     
@@ -359,7 +365,7 @@ if (!IsValidSD(pSD)) {
 }
 
 if (status == STATUS_SUCCESS) {
-    printf("retrieved the security descriptor!\n");
+    printf("\x1b[92m[!]\x1b[0m retrieved the security descriptor!\n");
 } else {
     printf("error\n");
     return FALSE;
@@ -396,14 +402,14 @@ if (!GetSecurityDescriptorDacl(pSD, &daslPresent, &dasl, &ownerDefaultedDasl)) {
 
 LPSTR daclOut;
 if (ConvertSecurityDescriptorToStringSecurityDescriptor(pSD, SDDL_REVISION_1, DACL_SECURITY_INFORMATION, &daclOut, NULL)) {
-    printf("DACL: %s\n", daclOut);
+    printf("\x1b[92m[+]\x1b[0m DACL: %s\n", daclOut);
 }
 
 //ConvertStringSecurityDescriptorToSecurityDescriptor found this use later to set a descriptor?
 
 LPSTR sidstring;
 if (ConvertSidToStringSid(ownerSID, &sidstring)) {
-    printf("SID: %s\n", sidstring);
+    printf("\x1b[92m[+]\x1b[0m SID: %s\n", sidstring);
 } else {
     printf("error geeting SID\n");
     return FALSE;
@@ -455,7 +461,7 @@ BOOL listProcesses() {
     } 
 int procCount = 0;
 while(info) {
-    wprintf(L"Image Name: %ls\n", info->ImageName.Buffer ? info->ImageName.Buffer : L"NULL, no image name\n");
+    wprintf(L"\x1b[92m[+]\x1b[0m Image Name: %ls\n", info->ImageName.Buffer ? info->ImageName.Buffer : L"NULL, no image name\n");
     printf("Number of Threads (process): %lu\n", info->NumberOfThreads);
     //printf("Next Entry offest: %lu\n", info->NextEntryOffset);
     printf("Handle count: %lu\n", info->HandleCount);
@@ -467,7 +473,7 @@ while(info) {
     info = (SYSTEM_PROCESS_INFORMATION*)((BYTE*)info + info->NextEntryOffset); //loop through using next next entry offset
 }
    
-    printf("# of processes: %i\n", procCount);
+    printf("\x1b[92m[+]\x1b[0m # of processes: %i\n", procCount);
 
     return TRUE;
 }
@@ -585,15 +591,15 @@ pNtQueryVirtualMemory NtQueryVirtualMemory = (pNtQueryVirtualMemory)GetProcAddre
     
   NTSTATUS status = NtQueryVirtualMemory(hProcess, addr, infoClass, &mbi, sizeof(mbi), NULL);
 if (!NT_SUCCESS(status)) {
-    printf("Protected Region (works for unprotected proc): %lu\n", GetLastError());
+    printf("Error with Virtual Memory: %lu\n", GetLastError());
 }
 
-    printf("Base address: %p\n", mbi.BaseAddress);
-    printf("Protections: %lu\n", mbi.Protect);
-    printf("State: %lu\n", mbi.State);
-    printf("Partition ID: %lu\n", mbi.PartitionId);
-    printf("Type: %lu\n", mbi.Type);
-    printf("Protect alloc: %lu\n", mbi.AllocationProtect);
+    printf("\x1b[92m[+]\x1b[0m Base address: 0x%p\n", mbi.BaseAddress);
+    printf("\x1b[92m[+]\x1b[0m Protections: %lu\n", mbi.Protect);
+    printf("\x1b[92m[+]\x1b[0m State: %lu\n", mbi.State);
+    printf("\x1b[92m[+]\x1b[0m Partition ID: %lu\n", mbi.PartitionId);
+    printf("\x1b[92m[+]\x1b[0m Type: %lu\n", mbi.Type);
+    printf("\x1b[92m[+]\x1b[0m Protect alloc: %lu\n", mbi.AllocationProtect);
 
     return TRUE;
 
@@ -657,11 +663,11 @@ if (status == STATUS_ACCESS_VIOLATION) {
         contextBreak.Dr7 |= (0 << 22); // 1-byte breakpoint
         SetThreadContext(hThread, &contextBreak);
 
-        printf("RIP: %016llX\n", contextBreak.Rip);
-        printf("RAX: %016llX\n", contextBreak.Rax);
-        printf("RBX: %016llX\n", contextBreak.Rbx);
-        printf("RCX: %016llX\n", contextBreak.Rcx);
-        printf("RDX: %016llX\n", contextBreak.Rdx);
+        printf("RIP: 0x%016llX\n", contextBreak.Rip);
+        printf("RAX: 0x%016llX\n", contextBreak.Rax);
+        printf("RBX: 0x%016llX\n", contextBreak.Rbx);
+        printf("RCX: 0x%016llX\n", contextBreak.Rcx);
+        printf("RDX: 0x%016llX\n", contextBreak.Rdx);
 
     } else {
         printf("Error: Unable to get thread context. %lu\n", GetLastError());
@@ -708,7 +714,7 @@ if (dh.e_magic != IMAGE_DOS_SIGNATURE) {
     printf("error 3 %lu\n", GetLastError());
     return FALSE;
 } else {
-    printf("Valdid PE file: YES-%x\n", dh.e_magic);
+    printf("\x1b[92m[+]\x1b[0m Valdid PE file: YES-%x\n", dh.e_magic);
 }
 
 //getting nt headers
@@ -723,7 +729,7 @@ DWORD sectionOffset = dh.e_lfanew + sizeof(IMAGE_NT_HEADERS);
 IMAGE_SECTION_HEADER section;
 
 //good touch
-printf("Scanning");
+printf("\x1b[92m[!]\x1b[0m Scanning");
  for (int i=0; i < 3; i++) {
      printf(".");
      Sleep(500);
@@ -738,9 +744,9 @@ if (!ReadProcessMemory(hProcess, (BYTE*)baseAddress + sectionOffset + (i * sizeo
     printf("Error reading section memory %lu", GetLastError());
     }
 
-printf("+ %s\n", (char*)section.Name);
+    printf("\x1b[92m[+]\x1b[0m %s\n", (char*)section.Name);
 
-    printf("Section: %s | Address: 0x%X | Size: %d\n", section.Name, section.VirtualAddress, section.SizeOfRawData);
+    printf("\x1b[92m[+]\x1b[0m Section: %s | Address: 0x%X | Size: %d\n", section.Name, section.VirtualAddress, section.SizeOfRawData);
 
     char buffer[1025];
     if (!ReadProcessMemory(hProcess, (BYTE*)baseAddress + section.VirtualAddress, &buffer, sizeof(buffer), NULL)) {
@@ -779,7 +785,7 @@ BOOL WINAPI debug(LPCVOID param) {
             NULL,
             &si,
             &pi)) {
-        printf("\033[35mDebugging %s:\033[0m\n", arg);
+        printf("\x1b[92m[+]\x1b[0m \033[35mDebugging %s:\033[0m\n", arg);
 
         
 
@@ -812,11 +818,11 @@ BOOL WINAPI debug(LPCVOID param) {
                             if (strcmp(buff, "!reg") == 0) {
                                printf("Process ID: %lu\n", pi.dwProcessId);
                                printf("Thread ID: %lu\n", pi.dwThreadId);
-                               printf("RIP: %016llX\n", context.Rip);
-                               printf("RAX: %016llX\n", context.Rax);
-                               printf("RBX: %016llX\n", context.Rbx);
-                               printf("RCX: %016llX\n", context.Rcx);
-                               printf("RDX: %016llX\n", context.Rdx);
+                               printf("RIP: 0x%016llX\n", context.Rip);
+                               printf("RAX: 0x%016llX\n", context.Rax);
+                               printf("RBX: 0x%016llX\n", context.Rbx);
+                               printf("RCX: 0x%016llX\n", context.Rcx);
+                               printf("RDX: 0x%016llX\n", context.Rdx);
                             }
                             
                            else if (strcmp(buff, "!attr") == 0) {
@@ -835,15 +841,15 @@ BOOL WINAPI debug(LPCVOID param) {
                             if (!GetSecurityDescriptor(hProcess)) {
                                   printf("error\n");
                                 }
-                                printf("Object Attributes: %i\n", objInfo.Attributes); 
-                                printf("Granted Access: %08X\n", objInfo.GrantedAccess);
-                                printf("Handle count: %lu\n", objInfo.HandleCount); 
+                                printf("\x1b[92m[+]\x1b[0m Object Attributes: %i\n", objInfo.Attributes); 
+                                printf("\x1b[92m[+]\x1b[0m Granted Access: %08X\n", objInfo.GrantedAccess);
+                                printf("\x1b[92m[+]\x1b[0m Handle count: %lu\n", objInfo.HandleCount); 
                                 FreeLibrary(hNtDll);     
                                 } 
 
                                 else if (strcmp(buff,"!peb") == 0) {
-                                    printf("peb already retrieved\n");
-                                    printf("Peb address: %p\n", peb.pebaddr);
+                                    printf("\x1b[92m[+]\x1b[0m peb already retrieved\n");
+                                    printf("\x1b[92m[+]\x1b[0m Peb address: 0x%p\n", peb.pebaddr);
                                      
 
                                 }
@@ -854,6 +860,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                        NTSTATUS status = NtTerminateProcess(NULL, 0);
                                        if (NT_SUCCESS(status)) {
                                         printf("See ya!\n", pi.dwProcessId);
+                                        printf("\a");
                                        } else {
                                         printf("NTSTATUS: 0x%08X - Error killing\n", status);
                                        }   
@@ -867,9 +874,9 @@ BOOL WINAPI debug(LPCVOID param) {
                                     if (peb.BeingDebugged == 0) {
                                         printf("debugged?: No\n");
                                     }
-                                    printf("Peb address: %p\n", peb.pebaddr);
+                                    printf("\x1b[92m[+]\x1b[0m Peb address: 0x%p\n", peb.pebaddr);
 
-                                    wprintf(L"Path: %ls\n", imagePath);
+                                    wprintf(L"\x1b[92m[+]\x1b[0m Path: %ls\n", imagePath);
 
 
                                 }
@@ -897,25 +904,30 @@ BOOL WINAPI debug(LPCVOID param) {
                                 }
 
                                 else if (strcmp(buff, "!proc") == 0) {
-                                    printf("Listing system wide process information:\n");
+                                    printf("\x1b[92m[+]\x1b[0m Listing system wide process information:\n");
                                     listProcesses();
                                 }
 
                                 // bit stuff
                                 else if (strcmp(buff, "!bit") == 0) {
-                                        printf("Is Protected Process?: %lu\n", pbi.IsProtectedProcess);
-                                        printf("Light Protected?: %lu\n", pbi.IsProtectedProcessLight);
-                                        printf("Uses Large Pages?: %lu\n", pbi.ImageUsesLargePages);
-                                        printf("IsImageDynamicallyRelocated?: %lu\n", pbi.IsImageDynamicallyRelocated);
+                                        printf("\x1b[92m[+]\x1b[0m Is Protected Process?: %lu\n", pbi.IsProtectedProcess);
+                                        printf("\x1b[92m[+]\x1b[0m Is PPL?: %lu\n", pbi.IsProtectedProcessLight);
+                                        printf("\x1b[92m[+]\x1b[0m Uses Large Pages?: %lu\n", pbi.ImageUsesLargePages);
+                                        printf("\x1b[92m[+]\x1b[0m IsImageDynamicallyRelocated?: %lu\n", pbi.IsImageDynamicallyRelocated);
 
                                 } 
+                                
+                                // Check for VEH in remote process
+                                else if (strcmp(buff, "!veh") == 0) {
+                                    printf("\x1b[92m[+]\x1b[0m VEH: %lu\n", (DWORD)pbi.ProcessUsingVEH);
+                                }
 
                                 else if (strcmp(buff,"!symbreak") == 0) {
                                     char *breakBuffer = (char*)malloc(100 * sizeof(char));
                                     if (!breakBuffer) {
                                         printf("Memory allocation error\n");
                                     }
-                                    printf("Which symbol to break at?\n");
+                                    printf("\x1b[92m[-]\x1b[0m Which symbol to break at?\n");
                                     if  (!fgets(breakBuffer, 99, stdin)) {
                                     printf("buffer to large\n");
                                     }
@@ -934,7 +946,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                         printf("Memory allocation error\n");
                                     }
 
-                                    printf("Which addr to get?\n");
+                                    printf("\x1b[92m[-]\x1b[0m Which addr to get?\n");
 
                                     if  (!fgets(breakBuffer, 99, stdin)) {
                                     printf("buffer to large\n");
@@ -953,7 +965,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                         printf("Memory allocation error\n");
                                     }
                                     
-                                    printf("Which address to break at?\n");
+                                    printf("\x1b[92m[-]\x1b[0m Which address to break at?\n");
                                    
                                     if  (!fgets(breakBuffer, 99, stdin)) {
                                     printf("buffer to large\n");
