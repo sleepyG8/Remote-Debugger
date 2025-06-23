@@ -252,7 +252,6 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread) {
 
     peb.BeingDebugged = pbi.BeingDebugged; //neat
     peb.params = pbi.ProcessParameters; //storing address
-    
 
     //remember even if its a Buffer in memory you have to read it to a WCHAR for storing like shown this is key
     RTL_USER_PROCESS_PARAMETERS parameters;
@@ -539,7 +538,6 @@ if (!baseAddr) {
     return FALSE;
 }
 
-
     //printf("data :%s\n", symbol);
     SYMBOL_INFO *Symbol = (SYMBOL_INFO*)malloc(sizeof(SYMBOL_INFO) + MAX_SYM_NAME);
     ZeroMemory(Symbol, sizeof(SYMBOL_INFO) + MAX_SYM_NAME);
@@ -609,12 +607,8 @@ if (!NT_SUCCESS(status)) {
 
 BOOL breakpoint(DWORD threadId, PVOID address, HANDLE hProcess) {
     CONTEXT contextBreak;
-        HANDLE hThread;
-    //HMODULE hModule = GetModuleHandle("notepad.exe"); // Or LoadLibrary() if it's a DLL
-//LPVOID targetAddr = GetProcAddress(hModule, "TargetFunction");
-
-    //DWORD threadId = 5652; // Replace with the actual thread ID
-
+    HANDLE hThread;
+ 
     hThread = OpenThread(THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME | THREAD_QUERY_INFORMATION | PROCESS_SUSPEND_RESUME, FALSE, threadId);
     if (hThread == NULL) {
         printf("Error: Unable to open thread.\n");
@@ -622,10 +616,12 @@ BOOL breakpoint(DWORD threadId, PVOID address, HANDLE hProcess) {
     }
 
     HMODULE hNtdll = GetModuleHandle("ntdll.dll");
-typedef NTSTATUS (NTAPI *pNtProtectVirtualMemory)(
+
+    typedef NTSTATUS (NTAPI *pNtProtectVirtualMemory)(
     HANDLE, PVOID*, PULONG, ULONG, PULONG
-);
-pNtProtectVirtualMemory NtProtectVirtualMemory = 
+    );
+
+    pNtProtectVirtualMemory NtProtectVirtualMemory = 
     (pNtProtectVirtualMemory)GetProcAddress(hNtdll, "NtProtectVirtualMemory");
 
 //attempt to bypass error 5 damn it doesnt work yet!
@@ -643,6 +639,7 @@ if (status == STATUS_ACCESS_VIOLATION) {
     return FALSE;
    }
     
+   // Helps with getting context maybe? idk you can remove probably
     Sleep(1000);
 
     //checking if thread is still active
@@ -787,8 +784,6 @@ BOOL WINAPI debug(LPCVOID param) {
             &pi)) {
         printf("\x1b[92m[+]\x1b[0m \033[35mDebugging %s:\033[0m\n", arg);
 
-        
-
         HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ | PROCESS_ALL_ACCESS, FALSE, pi.dwProcessId);
         if (!hProcess) {
             printf("Problem starting the debugger\n");
@@ -811,6 +806,7 @@ BOOL WINAPI debug(LPCVOID param) {
                             fgets(buff, 49, stdin);
                             size_t sizeBuff = sizeof(buff);
                             buff[strcspn(buff, "\n")] = '\0';
+                            
                             if (buff != NULL) {
             
                             //buff[sizeBuff + 1] = '\0';
@@ -887,20 +883,34 @@ BOOL WINAPI debug(LPCVOID param) {
 
                                 else if (strcmp(buff, "help") == 0) {
                                     printf("\n===== Debugger Usage =====\n");
-                                    printf("!reg     - Print process registers\n");
-                                    printf("!attr    - Retrieve object attributes\n");
-                                    printf("!peb     - Display PEB details\n");
-                                    printf("!params  - Show process parameters (debug status & path)\n");
-                                    printf("!proc    - Display all running processes on the system\n");
-                                    printf("!bit     - Display Bitfield data\n");
-                                    printf("!mbi     - get mbi info (only works for unprotected process)\n");
-                                    printf("!synbreak - break at a debug symbol (not stable yet)\n");
-                                    printf("!break   - Set a break and read registers\n");
-                                    printf("!getreg - print registers wherever in memory currently\n");
-                                    printf("clear    - Clear the console screen\n");
-                                    printf("exit     - Terminate debugging session\n");
-                                    printf("help     - Display additional commands\n");
-                                    printf("==========================\n");
+                                    printf("-- Registers & Breakpoints --\n");
+                                    printf("!reg      - Print process registers\n");
+                                    printf("!getreg   - Print registers at current memory location\n");
+                                    printf("!break    - Set a breakpoint and read registers\n");
+                                    printf("!synbreak - Break at a debug symbol (not stable yet)\n");
+
+                                    printf("\n-- Memory & Data Inspection --\n");
+                                    printf("!dump     - Dump a raw address (retry if ERROR_ACCESS_DENIED)\n");
+                                    printf("!mbi      - Get MBI info (only for unprotected processes)\n");
+                                    printf("!bit      - Display Bitfield data\n");
+                                    printf("!var      - Display section data\n");
+                                    printf("!veh      - VEH Info\n");
+
+                                    printf("\n-- Process & System Info --\n");
+                                    printf("!proc     - Display all running processes\n");
+                                    printf("!cpu      - Display CPU data per processor\n");
+                                    printf("!attr     - Retrieve object attributes\n");
+                                    printf("!peb      - Display PEB details\n");
+                                    printf("!params   - Show process parameters (debug status & path)\n");
+
+                                    printf("\n-- General Commands --\n");
+                                    printf("clear     - Clear the console screen\n");
+                                    printf("exit      - Terminate debugging session\n");
+                                    printf("kill      - Close the debugged process\n");
+                                    printf("help      - Display additional commands\n");
+
+                                    printf("==============================\n");
+
                                 }
 
                                 else if (strcmp(buff, "!proc") == 0) {
