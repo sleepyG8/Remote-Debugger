@@ -5,6 +5,7 @@
 #include <sddl.h> 
 #include <AclAPI.h>
 #include <dbghelp.h>
+//add terminate
 
 #define STATUS_SUCCESS ((NTSTATUS)0x00000000L)
 
@@ -27,6 +28,8 @@ struct myparams {
 WCHAR *fullPath;
 
 }myparams;
+
+typedef NTSTATUS (NTAPI* pNtTerminateProcess)(HANDLE, NTSTATUS);
 
 typedef NTSTATUS(NTAPI* pNtQueryInformationProcess)(
     HANDLE, PROCESSINFOCLASS, PVOID, ULONG, PULONG);
@@ -846,10 +849,17 @@ BOOL WINAPI debug(LPCVOID param) {
                                 }
 
                                 else if (strcmp(buff, "exit") == 0) {
-                                    printf("Goodbye!\n");
-                                    printf("ctrl-c to exit\n");
-                                    CloseHandle(hProcess);
-                                    break;
+                                        pNtTerminateProcess NtTerminateProcess = (pNtTerminateProcess)GetProcAddress(GetModuleHandle("ntdll.dll"), "NtTerminateProcess");
+                                       if (!NtTerminateProcess) return FALSE;
+                                       NTSTATUS status = NtTerminateProcess(NULL, 0);
+                                       if (NT_SUCCESS(status)) {
+                                        printf("See ya!\n", pi.dwProcessId);
+                                       } else {
+                                        printf("NTSTATUS: 0x%08X - Error killing\n", status);
+                                       }   
+                                       //Second call? Try it with 1 it doesnt work, this just works
+                                       NtTerminateProcess(NULL, 0);
+                                       
                                 }
 
                                 else if (strcmp(buff, "!params") == 0) {
@@ -1004,12 +1014,15 @@ BOOL WINAPI debug(LPCVOID param) {
                                     }
 
                                     else if (strcmp(buff, "kill") == 0) {
-                                       if  (!TerminateProcess(hProcess, 0)) {
-                                            if (GetLastError() == 5) {
-                                                printf("Cannot terminate this program\n");
-                                            }
-                                            }
-                                         }
+                                       pNtTerminateProcess NtTerminateProcess = (pNtTerminateProcess)GetProcAddress(GetModuleHandle("ntdll.dll"), "NtTerminateProcess");
+                                       if (!NtTerminateProcess) return FALSE;
+                                       NTSTATUS status = NtTerminateProcess(hProcess, 0);
+                                       if (NT_SUCCESS(status)) {
+                                        printf("Process[%lu] killed\n", pi.dwProcessId);
+                                       } else {
+                                        printf("NTSTATUS: 0x%08X - Error killing\n", status);
+                                       }   
+                                    }
 
                                      } else {
                                          printf("run -help- to see the help menu.\n");
