@@ -24,6 +24,7 @@
 - `clear` - Clear the console screen
 - `exit` - Terminate debugging session
 - `help` - Display additional commands
+- `kill` - Close Process 
 
 
                                    
