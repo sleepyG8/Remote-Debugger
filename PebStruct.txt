@@ -1,16 +1,16 @@
 typedef struct _MYPEB {
     BYTE Reserved1[2];
-    BYTE BeingDebugged;
+    BYTE BeingDebugged; //cool
         union {
-        BYTE BitField;
+        BYTE BitField; 
         struct {
             BYTE ImageUsesLargePages : 1;
-            BYTE IsProtectedProcess : 1;
+            BYTE IsProtectedProcess : 1; //cool
             BYTE IsImageDynamicallyRelocated : 1;
             BYTE SkipPatchingUser32Forwarders : 1;
             BYTE IsPackagedProcess : 1;
             BYTE IsAppContainer : 1;
-            BYTE IsProtectedProcessLight : 1;
+            BYTE IsProtectedProcessLight : 1; //cool
             BYTE IsLongPathAwareProcess : 1;
         };
     };
@@ -18,15 +18,15 @@ typedef struct _MYPEB {
     ULONG CrossProcessFlags;
     struct {
         ULONG ProcessInJob : 1;
-        ULONG ProcessInitializing : 1;
-        ULONG ProcessUsingVEH : 1;
-        ULONG ProcessUsingVCH : 1;
-        ULONG ProcessUsingFTH : 1;
+        ULONG ProcessInitializing : 1; 
+        ULONG ProcessUsingVEH : 1; //cool
+        ULONG ProcessUsingVCH : 1; //cool 
+        ULONG ProcessUsingFTH : 1; //cool 
         ULONG ReservedBits0 : 27;
     };
 };
     PVOID Reserved3[2];
-    PPEB_LDR_DATA Ldr;
+    PPEB_LDR_DATA Ldr; //cool
     PRTL_USER_PROCESS_PARAMETERS ProcessParameters;
     PVOID Reserved4[3];
     PVOID AtlThunkSListPtr;
