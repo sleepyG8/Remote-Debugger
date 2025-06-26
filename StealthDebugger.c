@@ -204,10 +204,34 @@ typedef struct _MYPEB {
     ULONG SessionId;
 } MYPEB;
 
+typedef struct _MY_PEB_LDR_DATA {
+    ULONG Length;
+    BOOLEAN Initialized;
+    PVOID SsHandle;
+    LIST_ENTRY InLoadOrderModuleList;
+    LIST_ENTRY InMemoryOrderModuleList;
+    LIST_ENTRY InInitializationOrderModuleList;
+} MY_PEB_LDR_DATA, *PMY_PEB_LDR_DATA;
+
+
+typedef struct _MY_LDR_DATA_TABLE_ENTRY {
+    LIST_ENTRY InLoadOrderLinks;
+    LIST_ENTRY InMemoryOrderLinks;
+    LIST_ENTRY InInitializationOrderLinks;
+    PVOID DllBase;
+    PVOID EntryPoint;
+    ULONG SizeOfImage;
+    UNICODE_STRING FullDllName;
+    UNICODE_STRING BaseDllName;
+    // Padding or additional fields could follow if needed
+} MY_LDR_DATA_TABLE_ENTRY;
+
+
+
 MYPEB pbi;
 WCHAR dllName[MAX_PATH] = {0};
 
-BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread) {
+BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread, DWORD id) {
     SuspendThread(thread);
     HMODULE hNtDll = GetModuleHandle("ntdll.dll");
     if (!hNtDll) {
@@ -239,7 +263,7 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread) {
    
    //printf("Peb struct address: %p", peb.pebaddr);
 
-    PEB_LDR_DATA ldrData;
+    MY_PEB_LDR_DATA ldrData;
     if (ReadProcessMemory(hProcess, proc.PebBaseAddress, &pbi, sizeof(pbi), NULL)) {
         printf("\n\x1b[92m[+]\x1b[0m process ID: %lu\n", (unsigned long)proc.UniqueProcessId);
     } else {
@@ -282,37 +306,40 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread) {
     
     size_t bytesread;
 
+    WaitForInputIdle(hProcess, 1000);
+
     //printf("%p", peb.LoaderData->Length);
-    printf("\x1b[92m[+]\x1b[0m Ldr address: 0x%p\n", pbi.Ldr);
     if (!ReadProcessMemory(hProcess, (LPCVOID)pbi.Ldr , &ldrData, sizeof(ldrData), &bytesread)) {
             printf("error getting ldr, retry...\n");
             return FALSE;
     }
-    //PPEB pebbers = (PPEB)pbi.PebBaseAddress;
-    // PPEB 
-   // printf("DLLs: %p", ldrData.InLoadOrderModuleList);
-    //PMY_LDR_DATA_TABLE_ENTRY ldr = (PMY_LDR_DATA_TABLE_ENTRY)peb.LoaderData;
+    
+        printf("\x1b[92m[+]\x1b[0m Ldr address: 0x%p\n", ldrData);
 
-    //printf("LI: %p", ldrData.InMemoryOrderModuleList.Flink);
+     LIST_ENTRY* head = &ldrData.InLoadOrderModuleList;
+    LIST_ENTRY* currentEntry = head->Flink;
     
-        LIST_ENTRY *currentEntry = (LIST_ENTRY*)ldrData.InMemoryOrderModuleList.Flink;
-        LIST_ENTRY *pLdrCurrentNode = ldrData.InMemoryOrderModuleList.Flink; 
-    
-   
+    while (currentEntry != head) {
         DWORD bytes;
-        LDR_DATA_TABLE_ENTRY ldrEntry = {0};
-        if (!ReadProcessMemory(hProcess, pLdrCurrentNode, &ldrEntry, sizeof(LDR_DATA_TABLE_ENTRY), &bytes)) {
+        MY_LDR_DATA_TABLE_ENTRY ldrEntry = {0};
+        if (!ReadProcessMemory(hProcess, currentEntry, &ldrEntry, sizeof(MY_LDR_DATA_TABLE_ENTRY), &bytes)) {
             printf("Error reading memory %lu\n", GetLastError());
             return FALSE;
         }
 
-        if (!ReadProcessMemory(hProcess, ldrEntry.FullDllName.Buffer, &dllName, ldrEntry.FullDllName.Length, NULL)) {
-            printf("Error reading dll name\n");
-            return 1;
+        WCHAR name[MAX_PATH] = {0};
+        if (!ReadProcessMemory(hProcess, ldrEntry.FullDllName.Buffer, &name, ldrEntry.FullDllName.Length, NULL)) {
+            printf("Error 1 %lu\n", GetLastError());
+            return FALSE;
         }
-        //printf("Bytes %lu\n", bytes);
-        wprintf(L"\x1b[92m[+]\x1b[0m Module: 0x%p\n", dllName);
 
+        wprintf(L"\x1b[92m[+]\x1b[0m Module: %s\n", name);
+        printf("Base Address: %p\n", ldrEntry.DllBase);
+        printf("+++++++++++++++++++++++++++++++++\n");
+        
+        currentEntry = ldrEntry.InLoadOrderLinks.Flink;
+       
+    }
         return TRUE;
     
     }
@@ -698,6 +725,7 @@ if (EnumProcessModules(hProcess, hMods, sizeof(hMods), &cbNeeded)) {
     return FALSE;
 }
 
+printf("base: %p\n", baseAddress);
 //reading dos header
 IMAGE_DOS_HEADER dh;
 
@@ -711,7 +739,7 @@ if (dh.e_magic != IMAGE_DOS_SIGNATURE) {
     printf("error 3 %lu\n", GetLastError());
     return FALSE;
 } else {
-    printf("\x1b[92m[+]\x1b[0m Valdid PE file: YES-%x\n", dh.e_magic);
+    printf("\x1b[92m[+]\x1b[0m Valid PE file: YES-%x\n", dh.e_magic);
 }
 
 //getting nt headers
@@ -796,7 +824,7 @@ BOOL WINAPI debug(LPCVOID param) {
        
             getThreads(threadId);
 
-            GetPEBFromAnotherProcess(hProcess, pi.dwThreadId);
+            GetPEBFromAnotherProcess(hProcess, pi.dwThreadId, pi.dwProcessId);
             printf("thread address/ID: %p\n", &threadId);
                     while (1) {                           
                             
