@@ -20,6 +20,7 @@ struct mystructs {
 PPEB pebaddr;
 PRTL_USER_PROCESS_PARAMETERS params;
 BYTE BeingDebugged;
+PVOID Base;
 
 }peb;
 
@@ -139,7 +140,7 @@ BOOL getThreads(DWORD *threadId) {
         context.Dr3 = 0xDEADBEEF;
         SetThreadContext(hThread, &context);
 
-
+        printf("\n\033[35m+-----------Registers-----------+\033[0m\n");
         printf("RIP: 0x%016llX\n", context.Rip);
         printf("RAX: 0x%016llX\n", context.Rax);
         printf("RBX: 0x%016llX\n", context.Rbx);
@@ -231,6 +232,7 @@ typedef struct _MY_LDR_DATA_TABLE_ENTRY {
 MYPEB pbi;
 WCHAR dllName[MAX_PATH] = {0};
 
+
 BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread, DWORD id) {
     SuspendThread(thread);
     HMODULE hNtDll = GetModuleHandle("ntdll.dll");
@@ -254,9 +256,11 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread, DWOR
         printf("NtQueryInformationProcess failed (Status 0x%08X)\n", status);
         return FALSE;
     }
+    //\033[35mDebugging %s:\033[0m
+    printf("\n\033[35m+-----------Startup-Info-----------+\033[0m\n");
     
    // printf("PEB Address of the target process: %s\n", proc.PebBaseAddress);
-    printf("\x1b[92m[+]\x1b[0m Peb address: 0x%p", proc.PebBaseAddress);
+    printf("\x1b[92m[+]\x1b[0m Peb address: 0x%llX", proc.PebBaseAddress);
     peb.pebaddr = proc.PebBaseAddress;
    
    
@@ -272,7 +276,7 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread, DWOR
     }
    // printf("Parameters: %i\n", pbi.ProcessParameters->CommandLine.Length); this is only for terminal apps
    // printf("Is Protected Process?: %lu\n", pbi.IsProtectedProcess);
-    printf("\x1B[31m+isBeingDebugged: %i\n\x1B[0m", pbi.BeingDebugged);
+    printf("\x1b[92m[+]\x1b[0m IsBeingDebugged: %i\n", pbi.BeingDebugged);
 
     peb.BeingDebugged = pbi.BeingDebugged; //neat
     peb.params = pbi.ProcessParameters; //storing address
@@ -290,7 +294,7 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread, DWOR
         if (!ReadProcessMemory(hProcess, parameters.ImagePathName.Buffer, imagePath, parameters.ImagePathName.Length, NULL)) {
             printf("Error reading ImagePathName buffer\n");
         } else {
-            wprintf(L"\x1b[92m[+]\x1b[0m Path: %ls\n", imagePath);
+            wprintf(L"\x1b[92m[+]\x1b[0m Full Path: %ls\n", imagePath);
             myparams.fullPath = _wcsdup(imagePath);
            // free(myparams.fullPath);
         }
@@ -302,39 +306,43 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread, DWOR
         return FALSE;
     }
 
-    wprintf(L"\x1b[92m[+]\x1b[0m Command line: %ls\n", cmd);
+    wprintf(L"\x1b[92m[+]\x1b[0m Command Line: %ls\n", cmd);
     
     size_t bytesread;
 
-    WaitForInputIdle(hProcess, 1000);
+    // wow this fixed a lot, the list wasnt populated
+    WaitForInputIdle(hProcess, 500);
 
-    //printf("%p", peb.LoaderData->Length);
     if (!ReadProcessMemory(hProcess, (LPCVOID)pbi.Ldr , &ldrData, sizeof(ldrData), &bytesread)) {
             printf("error getting ldr, retry...\n");
             return FALSE;
     }
     
-        printf("\x1b[92m[+]\x1b[0m Ldr address: 0x%p\n", ldrData);
+        printf("\x1b[92m[+]\x1b[0m LDR Address: 0x%llX\n", ldrData);
 
+        printf("\n\033[35m+-----------Modules-----------+\033[0m\n");
      LIST_ENTRY* head = &ldrData.InLoadOrderModuleList;
-    LIST_ENTRY* currentEntry = head->Flink;
+     LIST_ENTRY* currentEntry = head->Flink;
     
     while (currentEntry != head) {
         DWORD bytes;
         MY_LDR_DATA_TABLE_ENTRY ldrEntry = {0};
         if (!ReadProcessMemory(hProcess, currentEntry, &ldrEntry, sizeof(MY_LDR_DATA_TABLE_ENTRY), &bytes)) {
-            printf("Error reading memory %lu\n", GetLastError());
+            printf("\x1b[92m[!]\x1b[0m Done\n");
             return FALSE;
         }
 
         WCHAR name[MAX_PATH] = {0};
         if (!ReadProcessMemory(hProcess, ldrEntry.FullDllName.Buffer, &name, ldrEntry.FullDllName.Length, NULL)) {
-            printf("Error 1 %lu\n", GetLastError());
+            printf("\x1b[92m[!]\x1b[0m Done\n");
             return FALSE;
         }
 
+        // Setting Global struct
+        peb.Base = ldrEntry.DllBase;
+
         wprintf(L"\x1b[92m[+]\x1b[0m Module: %s\n", name);
-        printf("Base Address: %p\n", ldrEntry.DllBase);
+        printf("\x1b[92m[+]\x1b[0m Base Address: 0x%llX\n", ldrEntry.DllBase);
         printf("+++++++++++++++++++++++++++++++++\n");
         
         currentEntry = ldrEntry.InLoadOrderLinks.Flink;
@@ -359,8 +367,6 @@ if (!IsValidSD) {
     FreeLibrary(hAdvapi32);
     return FALSE;
 }
-
-
 
     typedef NTSTATUS (NTAPI *pZwQuerySecurityObject)(
         HANDLE, OBJECT_INFORMATION_CLASS, PVOID, ULONG, PULONG
@@ -421,8 +427,6 @@ if (!GetSecurityDescriptorDacl(pSD, &daslPresent, &dasl, &ownerDefaultedDasl)) {
 } else {
     if (daslPresent == FALSE) {
         printf("No group permissions set\n");
-    } else {
-        printf("DACL found!\n");
     }
 }
 
@@ -443,6 +447,21 @@ if (ConvertSidToStringSid(ownerSID, &sidstring)) {
 //SE_OBJECT_TYPE sObj;
 //SECURITY_INFORMATION sInfo;
 //if (GetSecurityInfo(hObject, sObj, sInfo, &ownerSID, &oGroup,  ))
+
+
+char name[256];
+char domain[256];
+DWORD nameLen = sizeof(name);
+DWORD domainLen = sizeof(domain);
+SID_NAME_USE sidType;
+
+PSID psdString = NULL;
+ConvertStringSidToSidA(sidstring, &psdString);
+if (!LookupAccountSidA(NULL, psdString, name, &nameLen, domain, &domainLen, &sidType)) {
+    printf("Error looking up SID name and domain %lu\n", GetLastError());
+}
+
+printf("\x1b[92m[+]\x1b[0m NT %s\\%s\\\n", name, domain);
 
 return TRUE;
 FreeLibrary(hAdvapi32);
@@ -707,29 +726,17 @@ if (status == STATUS_ACCESS_VIOLATION) {
 
 BOOL getVariables(DWORD procId) {
 
-BYTE *baseAddress = (BYTE*)malloc(100 * sizeof(BYTE));
-
 HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, procId);
 if (!hProcess) {
     printf("error opening process %lu\n", GetLastError());
     return FALSE;
 }
 
-//getting base address
-HMODULE hMods[1024];
-DWORD cbNeeded;
-if (EnumProcessModules(hProcess, hMods, sizeof(hMods), &cbNeeded)) {
-    baseAddress = (BYTE*)hMods[0]; 
-} else {
-    printf("error enumerating base address\n");
-    return FALSE;
-}
-
-printf("base: %p\n", baseAddress);
+printf("base: %p\n", peb.Base);
 //reading dos header
 IMAGE_DOS_HEADER dh;
 
-if (!ReadProcessMemory(hProcess, baseAddress, &dh, sizeof(IMAGE_DOS_HEADER), NULL)) {
+if (!ReadProcessMemory(hProcess, peb.Base, &dh, sizeof(IMAGE_DOS_HEADER), NULL)) {
     printf("error reading memory of process ID\n");
    return FALSE;
 }
@@ -744,7 +751,7 @@ if (dh.e_magic != IMAGE_DOS_SIGNATURE) {
 
 //getting nt headers
 IMAGE_NT_HEADERS nt;
-if (!ReadProcessMemory(hProcess, (BYTE*)baseAddress + dh.e_lfanew, &nt, sizeof(IMAGE_NT_HEADERS), NULL)) {
+if (!ReadProcessMemory(hProcess, (BYTE*)peb.Base + dh.e_lfanew, &nt, sizeof(IMAGE_NT_HEADERS), NULL)) {
     printf("error reading NT headers from remote process\n");
     return FALSE;
 }
@@ -765,7 +772,7 @@ printf("\x1b[92m[!]\x1b[0m Scanning");
 for (int i=0; i < nt.FileHeader.NumberOfSections; i++) {
 
     
-if (!ReadProcessMemory(hProcess, (BYTE*)baseAddress + sectionOffset + (i * sizeof(IMAGE_SECTION_HEADER)), &section, sizeof(IMAGE_SECTION_HEADER), NULL)) {
+if (!ReadProcessMemory(hProcess, (BYTE*)peb.Base + sectionOffset + (i * sizeof(IMAGE_SECTION_HEADER)), &section, sizeof(IMAGE_SECTION_HEADER), NULL)) {
     printf("Error reading section memory %lu", GetLastError());
     }
 
@@ -774,7 +781,7 @@ if (!ReadProcessMemory(hProcess, (BYTE*)baseAddress + sectionOffset + (i * sizeo
     printf("\x1b[92m[+]\x1b[0m Section: %s | Address: 0x%X | Size: %d\n", section.Name, section.VirtualAddress, section.SizeOfRawData);
 
     char buffer[1025];
-    if (!ReadProcessMemory(hProcess, (BYTE*)baseAddress + section.VirtualAddress, &buffer, sizeof(buffer), NULL)) {
+    if (!ReadProcessMemory(hProcess, (BYTE*)peb.Base + section.VirtualAddress, &buffer, sizeof(buffer), NULL)) {
         printf("Error reading data %lu\n", GetLastError());
     } else {
             for (int i = 0; i < sizeof(buffer); i++) {
@@ -790,6 +797,10 @@ if (!ReadProcessMemory(hProcess, (BYTE*)baseAddress + sectionOffset + (i * sizeo
 return TRUE;
 }
 
+BOOL checkSid() {
+
+
+}
 BOOL WINAPI debug(LPCVOID param) {
 
     char *arg = (char*)param;
