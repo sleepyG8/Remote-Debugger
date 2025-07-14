@@ -797,10 +797,14 @@ if (!ReadProcessMemory(hProcess, (BYTE*)peb.Base + sectionOffset + (i * sizeof(I
 return TRUE;
 }
 
-BOOL checkSid() {
+BOOL Extensions(char* dllName) {
+HANDLE hMod = LoadLibraryA(dllName);
+if (!hMod) return FALSE;
+printf("Extension loaded...\n");
 
+return TRUE;
+} 
 
-}
 BOOL WINAPI debug(LPCVOID param) {
 
     char *arg = (char*)param;
@@ -947,6 +951,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                     printf("exit      - Terminate debugging session\n");
                                     printf("kill      - Close the debugged process\n");
                                     printf("help      - Display additional commands\n");
+                                    printf("!ext      - Load extension (DLL)\n");
 
                                     printf("==============================\n");
 
@@ -1083,6 +1088,29 @@ BOOL WINAPI debug(LPCVOID param) {
                                        } else {
                                         printf("NTSTATUS: 0x%08X - Error killing\n", status);
                                        }   
+                                    }
+
+                                    else if (strcmp(buff, "!ext") == 0) {
+
+                                    char *breakBuffer = (char*)malloc(100 * sizeof(char));
+                                    if (!breakBuffer) {
+                                        printf("Memory allocation error\n");
+                                    }
+                                    
+                                    printf("\x1b[92m[-]\x1b[0m Which Extension to Load? (Path to dll)\n");
+                                   
+                                    if  (!fgets(breakBuffer, 99, stdin)) {
+                                    printf("buffer to large\n");
+                                    return FALSE;
+                                    }
+
+                                    // Break
+                                    breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
+
+                                    if (!Extensions(breakBuffer)) {
+                                        printf("Error loading extension\n");
+                                    }
+
                                     }
 
                                      } else {
