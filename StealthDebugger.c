@@ -688,7 +688,7 @@ BOOL listProcesses() {
         return FALSE;
     }
 
-    PULONG returnLen;
+    ULONG returnLen;
     NTSTATUS status = NtQuerySystemInformation(SystemProcessInformation, NULL, 0, &returnLen);
     if (status != STATUS_INFO_LENGTH_MISMATCH) {
         printf("Error 0x%X", status);
@@ -707,7 +707,22 @@ BOOL listProcesses() {
     } 
 int procCount = 0;
 while(info) {
+
     wprintf(L"\x1b[92m[+]\x1b[0m Image Name: %ls\n", info->ImageName.Buffer ? info->ImageName.Buffer : L"NULL, no image name\n");
+
+
+    ULONG threadCount = info->NumberOfThreads;
+
+    // info + 1 walks from process struct to thread struct
+    PSYSTEM_THREAD_INFORMATION threads = (PSYSTEM_THREAD_INFORMATION)(info + 1);
+
+    for (int i=0; i < info->NumberOfThreads; i++) {
+        printf("Thread # %lu - ", threads[i].ClientId.UniqueThread);
+    }
+
+    printf("\n");
+
+
     printf("Number of Threads (process): %lu\n", info->NumberOfThreads);
     //printf("Next Entry offest: %lu\n", info->NextEntryOffset);
     printf("Handle count: %lu\n", info->HandleCount);
@@ -981,7 +996,7 @@ if (!ReadProcessMemory(hProcess, (BYTE*)peb.Base + sectionOffset + (i * sizeof(I
 
     printf("\x1b[92m[+]\x1b[0m Section: %s | Address: 0x%X | Size: %d\n", section.Name, section.VirtualAddress, section.SizeOfRawData);
 
-    char buffer[1025];
+    char buffer[0x1000];
     if (!ReadProcessMemory(hProcess, (BYTE*)peb.Base + section.VirtualAddress, &buffer, sizeof(buffer), NULL)) {
         printf("Error reading data %lu\n", GetLastError());
     } else {
