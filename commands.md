@@ -13,6 +13,7 @@
 - `!attr` - Retrieve object attributes
 - `!peb` - Display PEB details
 - `!params` - Show process parameters (debug status & path)
+- `!gsi` - Get system info
 
 ## Memory & Data Analysis
 - `!mbi` - Get MBI info (only works for unprotected process)
@@ -24,7 +25,8 @@
 - `clear` - Clear the console screen
 - `exit` - Terminate debugging session
 - `help` - Display additional commands
-- `kill` - Close Process 
+- `kill` - Close Process
+- `!ext` - Run a Dll (Extentions)
 
 
                                    
