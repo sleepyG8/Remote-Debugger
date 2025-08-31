@@ -360,7 +360,6 @@ if (id.Name == 0) break;
 char* importName[256];
 if (!ReadProcessMemory(hProcess, (BYTE*)baseAddress + id.Name, 
                        importName, sizeof(importName), NULL)) {
-    printf("End\n");
     return NULL;
 }
 
@@ -1154,28 +1153,123 @@ printf("Extension loaded...\n");
 return TRUE;
 } 
 
+DWORD threadid;
+wchar_t* secondParam = NULL;
+DWORD GetProc(wchar_t* procName) {
+
+    HMODULE hNtDll = GetModuleHandle("ntdll.dll");
+    if (!hNtDll) {
+        printf("Failed to load ntdll.dll\n");
+        return FALSE;
+    }
+
+    pNtQuerySystemInformation NtQuerySystemInformation =
+        (pNtQuerySystemInformation)GetProcAddress(hNtDll, "NtQuerySystemInformation");
+    if (!NtQuerySystemInformation) {
+        printf("Failed to get NtQueryInformationProcess\n");
+        return FALSE;
+    }
+
+    ULONG returnLen;
+    NTSTATUS status = NtQuerySystemInformation(SystemProcessInformation, NULL, 0, &returnLen);
+    if (status != STATUS_INFO_LENGTH_MISMATCH) {
+        printf("Error 0x%X", status);
+        return FALSE;
+    }
+
+    //printf("%lu\n", returnLen);
+        SYSTEM_PROCESS_INFORMATION* info = malloc(returnLen);
+        if (!info) {
+            printf("failed to allocate memory\n");
+        }
+
+        status = NtQuerySystemInformation(SystemProcessInformation, info, returnLen, &returnLen);
+            if (status != STATUS_SUCCESS) {
+        printf("Error 2 0x%X", status);
+        return FALSE;
+    } 
+int procCount = 0;
+while(info) {
+
+    // no "NULL" buffers
+    if (info->ImageName.Buffer && info->ImageName.Length > 0) {
+        
+    if (wcscmp(info->ImageName.Buffer, procName) == 0) {
+
+        ULONG threadCount = info->NumberOfThreads;
+
+        // info + 1 walks from process struct to thread struct
+        PSYSTEM_THREAD_INFORMATION threads = (PSYSTEM_THREAD_INFORMATION)(info + 1);
+
+        threadid = threads[info->NumberOfThreads - 1].ClientId.UniqueThread;
+
+        return info->UniqueProcessId;
+    }
+}
+
+
+
+    //wprintf(L"\x1b[92m[+]\x1b[0m Image Name: %ls\n", info->ImageName.Buffer ? info->ImageName.Buffer : L"NULL, no image name\n");
+    //printf("Number of Threads (process): %lu\n", info->NumberOfThreads);
+    //printf("Next Entry offest: %lu\n", info->NextEntryOffset);
+    //printf("Handle count: %lu\n", info->HandleCount);
+   // printf("Memory Usage: %llu\n", info->VirtualSize);
+    //printf("Process ID: %i\n", (int)info->UniqueProcessId);
+    //printf("+++++++++++++++++++++++++++++++++++++++++++\n");
+    procCount++;
+    if (info->NextEntryOffset == 0) break;
+    info = (SYSTEM_PROCESS_INFORMATION*)((BYTE*)info + info->NextEntryOffset); //loop through using next next entry offset
+}
+   
+   // printf("\x1b[92m[+]\x1b[0m # of processes: %i\n", procCount);
+
+    return 0;
+}
+
+// Eyes start bleeding now
 BOOL WINAPI debug(LPCVOID param) {
 
-    char *arg = (char*)param;
+    wchar_t *arg = (wchar_t*)param;
     STARTUPINFO si = { sizeof(si) };
     PROCESS_INFORMATION pi = { 0 };
 
     logo();
-    char *process = arg;
-    //"C:\\Windows\\System32\\notepad.exe"
-    if (CreateProcess(
-            process,
-            NULL,
-            NULL,
-            NULL,
-            FALSE,
-            0,
-            NULL,
-            NULL,
-            &si,
-            &pi)) {
+    wchar_t *process = arg;
+
+    if (wcscmp(process, L"-c") == 0) {
+
+                pi.dwProcessId = GetProc(secondParam);
+                //printf("%lu\n", pi.dwProcessId);
+                pi.dwThreadId = threadid;
+                //printf("%lu\n", pi.dwProcessId);
+
+                if (pi.dwProcessId != 0 && pi.dwThreadId != 0) {
+                wprintf(L"\x1b[92m[+]\x1b[0m \033[35mDebugging %s:\033[0m\n", secondParam);
+                } else {
+                    printf("Error Wrong Process Name\n");
+                }
+
+            } else {
+
+                if (CreateProcessW(
+                    process,
+                    NULL,
+                    NULL,
+                    NULL,
+                    FALSE,
+                    0,
+                    NULL,
+                    NULL,
+                    &si,
+                    &pi)) {
+
         printf("\x1b[92m[+]\x1b[0m \033[35mDebugging %s:\033[0m\n", arg);
 
+            } else {
+                puts("Wrong path...");
+                return 1;
+            }
+        }
         HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ | PROCESS_ALL_ACCESS, FALSE, pi.dwProcessId);
         if (!hProcess) {
             printf("Problem starting the debugger\n");
@@ -1479,16 +1573,32 @@ BOOL WINAPI debug(LPCVOID param) {
                                         }
                             }                  
                         }                                            
-                    }
     WaitForInputIdle(pi.hProcess, INFINITE);
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
     return TRUE;
 }
 
-int main(int argc, char* argv[]) {
+int wmain(int argc, wchar_t* argv[]) {
     LPVOID fiberMain = ConvertThreadToFiber(NULL); 
     LPVOID debugFiber = CreateFiber(0, debug, argv[1]);
+
+    if (argc < 2) {
+        puts("\033[35mGlyph - Remote debugger engine by Sleepy\033[0m\n");
+        puts("\x1b[92mUsage:\x1b[0m\n -c <Remote process name> ex. Notepad.exe (ATTACH)\n <path to executable> ex. C:\\Windows\\System32\\notepad.exe (START)");
+        puts("-l (LIST)");
+        return 0;
+    }
+
+    if (wcscmp(argv[1], L"-l") == 0) {
+        listProcesses();
+        return 0;
+    }
+
+    if (argc > 2) {
+        secondParam = argv[2];
+        //wprintf(L"%ws\n", argv[2]);
+    }
 
     if (debugFiber) {
         while (1) {
