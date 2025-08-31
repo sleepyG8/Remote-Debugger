@@ -1287,6 +1287,8 @@ BOOL WINAPI debug(LPCVOID param) {
                                     printf("!bit      - Display Bitfield data\n");
                                     printf("!var      - Display section data\n");
                                     printf("!veh      - VEH Info\n");
+                                    printf("!imports  - Get Remote Imports\n");
+
 
                                     printf("\n-- Process & System Info --\n");
                                     printf("!proc     - Display all running processes\n");
@@ -1294,6 +1296,8 @@ BOOL WINAPI debug(LPCVOID param) {
                                     printf("!attr     - Retrieve object attributes\n");
                                     printf("!peb      - Display PEB details\n");
                                     printf("!params   - Show process parameters (debug status & path)\n");
+                                    printf("!gsi      - Get System Info\n");
+
 
                                     printf("\n-- General Commands --\n");
                                     printf("clear     - Clear the console screen\n");
