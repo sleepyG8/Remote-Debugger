@@ -241,6 +241,136 @@ BOOL getSystemInfo() {
     return 0;
 }
 
+IMAGE_THUNK_DATA thunkData;
+
+UINT RvaToFileOffset(HANDLE hProcess, BYTE* baseAddress, UINT rva) {
+    IMAGE_DOS_HEADER dh;
+    if (!ReadProcessMemory(hProcess, baseAddress, &dh, sizeof(IMAGE_DOS_HEADER), NULL)) {
+        printf("Error reading DOS header\n");
+        return -1;
+    }
+
+    IMAGE_NT_HEADERS ntHeaders;
+    if (!ReadProcessMemory(hProcess, baseAddress + dh.e_lfanew, &ntHeaders, sizeof(IMAGE_NT_HEADERS), NULL)) {
+        printf("Error reading NT headers\n");
+        return -1;
+    }
+
+    IMAGE_SECTION_HEADER* sections = (IMAGE_SECTION_HEADER*)malloc(sizeof(IMAGE_SECTION_HEADER) * ntHeaders.FileHeader.NumberOfSections);
+    if (!sections) {
+        printf("Memory allocation failed\n");
+        return -1;
+    }
+
+    DWORD sectionOffset = dh.e_lfanew + offsetof(IMAGE_NT_HEADERS, OptionalHeader) + ntHeaders.FileHeader.SizeOfOptionalHeader;
+
+    if (!ReadProcessMemory(hProcess, baseAddress + sectionOffset, sections,
+                           sizeof(IMAGE_SECTION_HEADER) * ntHeaders.FileHeader.NumberOfSections, NULL)) {
+        printf("Error reading section headers\n");
+        free(sections);
+        return -1;
+    }
+
+    
+    for (int i = 0; i < ntHeaders.FileHeader.NumberOfSections; ++i) {
+        IMAGE_SECTION_HEADER section = sections[i];
+        if (rva >= section.VirtualAddress && rva < section.VirtualAddress + section.Misc.VirtualSize) {
+            free(sections);
+            return section.PointerToRawData + (rva - section.VirtualAddress);
+        }
+    }
+
+    free(sections);
+    return -1; 
+}
+
+
+char* getRemoteImports(HANDLE hProcess) {
+
+printf("Remote Imports:\n");
+
+printf("Base: %p\n", (void*)peb.Base);
+
+//getting base address
+BYTE* baseAddress = peb.Base;
+
+if (peb.Base == 0) return 1;
+
+//reading dos header
+IMAGE_DOS_HEADER dh;
+
+if (!ReadProcessMemory(hProcess, baseAddress, &dh, sizeof(IMAGE_DOS_HEADER), NULL)) {
+    printf("error reading memory of process ID\n");
+   return NULL;
+}
+
+//checks for a valid PE file
+if (dh.e_magic != IMAGE_DOS_SIGNATURE) {
+    printf("error 3 %lu\n", GetLastError());
+    return NULL;
+} else {
+    printf("Valdid PE file: YES-%x\n", dh.e_magic);
+}
+
+
+//getting nt headers
+#ifdef _WIN64
+IMAGE_NT_HEADERS64 nt;
+#else
+IMAGE_NT_HEADERS32 nt;
+#endif
+
+if (!ReadProcessMemory(hProcess, (BYTE*)baseAddress + dh.e_lfanew, &nt, sizeof(IMAGE_NT_HEADERS), NULL)) {
+    printf("error reading NT headers from remote process\n");
+    return NULL;
+}
+
+//optional headers
+IMAGE_OPTIONAL_HEADER oh;
+if (!ReadProcessMemory(hProcess, (BYTE*)baseAddress + dh.e_lfanew + offsetof(IMAGE_NT_HEADERS, OptionalHeader), 
+                       &oh, sizeof(IMAGE_OPTIONAL_HEADER), NULL)) {
+    printf("Error reading Optional Header\n");
+    return NULL;
+}
+
+//some dlls like ntdll dont have imports
+if (oh.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress == 0) {
+    printf("Does not have any imports.\n");
+    return NULL;
+} 
+
+
+// This pain in the ass loop
+// I had to do this to loop through properly
+BYTE* importDescAddr = (BYTE*)baseAddress + oh.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress;
+
+while (importDescAddr != 0) {
+
+// reading (BYTE*)baseAddress + oh.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress from remote process
+IMAGE_IMPORT_DESCRIPTOR id;
+if (!ReadProcessMemory(hProcess, importDescAddr, &id, sizeof(IMAGE_IMPORT_DESCRIPTOR), NULL)) {
+    printf("error reading the import descriptor\n");
+    return NULL;
+}
+
+//Check
+if (id.Name == 0) break;
+
+// Getting import name from id using id.Name
+char* importName[256];
+if (!ReadProcessMemory(hProcess, (BYTE*)baseAddress + id.Name, 
+                       importName, sizeof(importName), NULL)) {
+    printf("End\n");
+    return NULL;
+}
+
+printf("%s\n", importName);
+    
+// Move forward 1 ID just like my ID++
+importDescAddr += sizeof(IMAGE_IMPORT_DESCRIPTOR);
+}
+}
+
 BOOL logo() {
     
     //aunt ansi came to town
@@ -408,6 +538,7 @@ typedef struct _MYPEB {
     ULONG SessionId;
 } MYPEB;
 
+
 typedef struct _MY_PEB_LDR_DATA {
     ULONG Length;
     BOOLEAN Initialized;
@@ -453,6 +584,7 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread, DWOR
 
     
     PROCESS_BASIC_INFORMATION proc = {0};
+
     ULONG returnlen;
     NTSTATUS status = NtQueryInformationProcess(hProcess, ProcessBasicInformation, &proc, sizeof(PROCESS_BASIC_INFORMATION), &returnlen);
     if (status != 0) {
@@ -467,7 +599,7 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread, DWOR
     peb.pebaddr = proc.PebBaseAddress;
    
    //printf("Peb struct address: %p", peb.pebaddr);
-
+   
     MY_PEB_LDR_DATA ldrData;
     if (ReadProcessMemory(hProcess, proc.PebBaseAddress, &pbi, sizeof(pbi), NULL)) {
         printf("\n\x1b[92m[+]\x1b[0m process ID: %lu\n", (unsigned long)proc.UniqueProcessId);
@@ -540,8 +672,9 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread, DWOR
         }
 
         // Setting Global struct
+        if (wcscmp(imagePath, name)) {
         peb.Base = ldrEntry.DllBase;
-
+        }
         wprintf(L"\x1b[92m[+]\x1b[0m Module: %s\n", name);
         printf("\x1b[92m[+]\x1b[0m Base Address: 0x%llX\n", ldrEntry.DllBase);
         printf("+++++++++++++++++++++++++++++++++\n");
@@ -1331,6 +1464,10 @@ BOOL WINAPI debug(LPCVOID param) {
 
                                     else if (strcmp(buff, "!gsi") == 0) {
                                         getSystemInfo();
+                                    }
+
+                                    else if (strcmp(buff, "!imports") == 0) {
+                                        getRemoteImports(hProcess);
                                     }
 
                                      } else {
