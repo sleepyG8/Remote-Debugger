@@ -243,6 +243,7 @@ BOOL getSystemInfo() {
 
 IMAGE_THUNK_DATA thunkData;
 
+// Helper Remote to get VA
 UINT RvaToFileOffset(HANDLE hProcess, BYTE* baseAddress, UINT rva) {
     IMAGE_DOS_HEADER dh;
     if (!ReadProcessMemory(hProcess, baseAddress, &dh, sizeof(IMAGE_DOS_HEADER), NULL)) {
@@ -284,6 +285,23 @@ UINT RvaToFileOffset(HANDLE hProcess, BYTE* baseAddress, UINT rva) {
     return -1; 
 }
 
+//Helper to get VA
+BYTE* VAFromRVA(DWORD rva, PIMAGE_NT_HEADERS nt, BYTE* base) {
+    PIMAGE_SECTION_HEADER section = IMAGE_FIRST_SECTION(nt);
+
+    //printf("hello\n");
+    for (int i = 0; i < nt->FileHeader.NumberOfSections; i++, section++) {
+        DWORD sectionVA = section->VirtualAddress;
+        DWORD sectionSize = section->Misc.VirtualSize;
+           // printf("hello2\n");
+
+        if (rva >= sectionVA && rva < (sectionVA + sectionSize)) {
+            return base + section->PointerToRawData + (rva - sectionVA);
+        }
+    }
+
+    return NULL;
+}
 
 char* getRemoteImports(HANDLE hProcess) {
 
@@ -377,7 +395,7 @@ BOOL logo() {
     
         printf("\x1B[2;20H");
         printf("\x1B[37;44m");
-        printf("Debugger By Sleepy:\n                            v1.0.0\n");
+        printf("Debugger By Sleepy:\n                            v1.1.1\n");
     
         
     
@@ -389,7 +407,9 @@ BOOL logo() {
         }
         
         
-        printf("\x1B[6;10Hprocesses:\n\n");
+       // printf("\x1B[6;10Hprocesses:\n\n");
+
+        puts("\n");
         printf("\x1B[0m");
         
         return 0;
@@ -1154,7 +1174,6 @@ return TRUE;
 } 
 
 DWORD threadid;
-wchar_t* secondParam = NULL;
 DWORD GetProc(wchar_t* procName) {
 
     HMODULE hNtDll = GetModuleHandle("ntdll.dll");
@@ -1235,6 +1254,7 @@ typedef struct _WIN_CERTIFICATE
 
 } WIN_CERTIFICATE, *LPWIN_CERTIFICATE;
 
+// Getting files signature
 void* getSignature(wchar_t* readFile) {
 
 FILE* file = _wfopen(readFile, L"rb");
@@ -1296,16 +1316,177 @@ printf("+++++++++++++++++++++++++++++++++\n");
 return 0;
 }
 
+BOOL cfgCheck(wchar_t* readFile) {
+
+FILE* file = _wfopen(readFile, L"rb");
+
+fseek(file, 0, SEEK_END);
+size_t size = ftell(file);
+fseek(file, 0, SEEK_SET);
+
+BYTE* buff = malloc(size);
+
+if (!fread(buff, 1, size, file )) {
+    printf("error\n");
+    return 1;
+ }
+
+PIMAGE_DOS_HEADER dh = (PIMAGE_DOS_HEADER)buff;
+if (dh->e_magic != IMAGE_DOS_SIGNATURE) {
+    printf("Invalid PE file\n");
+    return 1;
+}
+
+PIMAGE_NT_HEADERS nt = (PIMAGE_NT_HEADERS)((BYTE*)dh + dh->e_lfanew);
+if (nt->Signature != IMAGE_NT_SIGNATURE) {
+    printf("error 2\n");
+    return 1;
+}
+
+PIMAGE_OPTIONAL_HEADER oh = &nt->OptionalHeader;
+
+PIMAGE_LOAD_CONFIG_DIRECTORY64  id = (PIMAGE_LOAD_CONFIG_DIRECTORY64)VAFromRVA(nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG].VirtualAddress, nt, buff);
+if (!id) {
+    printf("error\n");
+    return 1;
+}
+
+if (id->GuardFlags != 0) {
+    wprintf(L"CFG protections FOUND on - %ws\n", readFile);
+    if (id->GuardFlags == 0x00417500) {
+        puts("XFG enabled\n");
+    }
+} else {
+    wprintf(L"*No CFG detected on - [%ws]*\n", readFile);
+}
+
+return 0;
+}
+
+// DLL check
+BOOL isDLL = 0;
+// Getting DLL exports
+BOOL dllExports(wchar_t* path) {
+
+// wide load
+HMODULE hMod = LoadLibraryExW(path, NULL, 0);
+if (!hMod) {
+    printf("Wrong path...\n");
+    return 1;
+}
+
+PIMAGE_DOS_HEADER dh = (PIMAGE_DOS_HEADER)hMod;
+if (dh->e_magic != IMAGE_DOS_SIGNATURE) {
+    printf("error 3\n");
+    return 1;
+}
+
+
+PIMAGE_NT_HEADERS nt = (PIMAGE_NT_HEADERS)((BYTE*)dh + dh->e_lfanew);
+if (nt->Signature != IMAGE_NT_SIGNATURE) {
+    printf("error 2\n");
+    return 1;
+}
+
+
+PIMAGE_OPTIONAL_HEADER oh = &nt->OptionalHeader;
+
+PIMAGE_DATA_DIRECTORY exportDataDir = &oh->DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT];
+
+PIMAGE_EXPORT_DIRECTORY exportDir = (PIMAGE_EXPORT_DIRECTORY)((BYTE*)oh->ImageBase + exportDataDir->VirtualAddress);
+
+
+int functionNum = 0;
+DWORD* nameRVAs = (DWORD*)((BYTE*)oh->ImageBase + exportDir->AddressOfNames);
+for (size_t i = 0; i < exportDir->NumberOfNames; i++) {
+    functionNum++;
+    printf("%i: ", functionNum);
+    printf("Function: %s\n", (char*)oh->ImageBase + nameRVAs[i]);
+}
+
+printf("# of functions: %lu\n", exportDir->NumberOfFunctions);
+printf("address of functions: 0x%p\n", (void*)exportDir->AddressOfFunctions);
+printf("Image base: 0x%p\n", (void*)oh->ImageBase);
+
+
+return 0;
+}
+
+// Getting DLL imports
+BOOL dllImports(wchar_t* path) {
+
+HMODULE hMod = LoadLibraryExW(path, NULL, 0);
+if (!hMod) {
+    printf("Wrong path...\n");
+    return 1;
+}
+
+PIMAGE_DOS_HEADER dh = (PIMAGE_DOS_HEADER)hMod;
+if (dh->e_magic != IMAGE_DOS_SIGNATURE) {
+    return 1;
+} else {
+    printf("Valdid PE file: %x\n", dh->e_magic);
+}
+
+PIMAGE_NT_HEADERS nt = (PIMAGE_NT_HEADERS)((BYTE*)dh + dh->e_lfanew);
+if (nt->Signature != IMAGE_NT_SIGNATURE) {
+    return 1;
+}
+
+PIMAGE_OPTIONAL_HEADER oh = &nt->OptionalHeader;
+
+if (oh->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress == 0) {
+    printf("Does not have any imports.\n");
+    return 1;
+}
+
+PIMAGE_IMPORT_DESCRIPTOR id = (PIMAGE_IMPORT_DESCRIPTOR)((BYTE*)oh->ImageBase + oh->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress);
+
+while (id->Name != 0) {
+    printf("Import: %s\n", (char*)oh->ImageBase + id->Name);
+    printf("Characteristics: %X\n", id->Characteristics);
+    id++; // Move to the next one
+}
+
+return 0;
+}
+
+wchar_t* secondParam = NULL; // argv[2]
+wchar_t* dllChoice; // Only for DLLs
+
 // Eyes start bleeding now
 BOOL WINAPI debug(LPCVOID param) {
 
     wchar_t *arg = (wchar_t*)param;
     STARTUPINFO si = { sizeof(si) };
     PROCESS_INFORMATION pi = { 0 };
-
-    logo();
     wchar_t *process = arg;
 
+    logo();
+
+    // DLL stuff
+    if (wcscmp(process, L"-DLL") == 0) {
+
+        wprintf("%ws\n", dllChoice);
+        if (wcscmp(dllChoice, L"-imports") == 0) {
+        dllImports(secondParam);
+        return 0;
+        }
+
+        else if (wcscmp(dllChoice, L"-exports") == 0) {
+        dllExports(secondParam);
+        return 0;
+        }
+
+        else {
+            puts("-imports or -exports");
+        }
+
+        puts("\nsee ya!\n");
+        return 0;
+    }
+
+    // ATTACH stuff
     if (wcscmp(process, L"-c") == 0) {
 
                 pi.dwProcessId = GetProc(secondParam);
@@ -1320,7 +1501,7 @@ BOOL WINAPI debug(LPCVOID param) {
                 }
 
             } else {
-
+                // START process stuff
                 if (CreateProcessW(
                     process,
                     NULL,
@@ -1340,6 +1521,11 @@ BOOL WINAPI debug(LPCVOID param) {
                 return 1;
             }
         }
+
+        ////////////////////////////////////////////////////////////////////////////////////////////////
+        //                                     Start of main Engine                                   // 
+        ////////////////////////////////////////////////////////////////////////////////////////////////
+        
         HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ | PROCESS_ALL_ACCESS, FALSE, pi.dwProcessId);
         if (!hProcess) {
             printf("Problem starting the debugger\n");
@@ -1353,7 +1539,13 @@ BOOL WINAPI debug(LPCVOID param) {
             getThreads(threadId);
 
             GetPEBFromAnotherProcess(hProcess, pi.dwThreadId, pi.dwProcessId);
+
             printf("thread address/ID: %p\n", &threadId);
+
+            ////////////////////////////////////////////////////////////////////
+            // Each strcmp() is a feature, go down the list                   //
+            ////////////////////////////////////////////////////////////////////
+
                     while (1) {                           
                             
                             char buff[50];
@@ -1378,7 +1570,8 @@ BOOL WINAPI debug(LPCVOID param) {
                             }
                             
                            else if (strcmp(buff, "!attr") == 0) {
-                                           //geting object info
+
+                            //geting object info
                             typedef NTSTATUS (NTAPI *pNtQueryObject)(HANDLE, OBJECT_INFORMATION_CLASS, PVOID, ULONG, PULONG);
         
                             HMODULE hNtDll = LoadLibrary("ntdll.dll");
@@ -1402,8 +1595,6 @@ BOOL WINAPI debug(LPCVOID param) {
                                 else if (strcmp(buff,"!peb") == 0) {
                                     printf("\x1b[92m[+]\x1b[0m peb already retrieved\n");
                                     printf("\x1b[92m[+]\x1b[0m Peb address: 0x%p\n", peb.pebaddr);
-                                     
-
                                 }
 
                                 else if (strcmp(buff, "exit") == 0) {
@@ -1417,8 +1608,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                         printf("NTSTATUS: 0x%08X - Error killing\n", status);
                                        }   
                                        //Second call? Try it with 1 it doesnt work, this just works
-                                       NtTerminateProcess(NULL, 0);
-                                       
+                                       NtTerminateProcess(NULL, 0);    
                                 }
 
                                 else if (strcmp(buff, "!params") == 0) {
@@ -1427,16 +1617,13 @@ BOOL WINAPI debug(LPCVOID param) {
                                         printf("debugged?: No\n");
                                     }
                                     printf("\x1b[92m[+]\x1b[0m Peb address: 0x%p\n", peb.pebaddr);
-
                                     wprintf(L"\x1b[92m[+]\x1b[0m Path: %ls\n", imagePath);
-
-
                                 }
 
                                 else if (strcmp(buff, "clear") == 0) {
                                     printf("\x1B[2J");                             
                                    }
-
+/////////-HELP-/////////
                                 else if (strcmp(buff, "help") == 0) {
                                     printf("\n===== Debugger Usage =====\n");
                                     printf("-- Registers & Breakpoints --\n");
@@ -1461,6 +1648,8 @@ BOOL WINAPI debug(LPCVOID param) {
                                     printf("!peb      - Display PEB details\n");
                                     printf("!params   - Show process parameters (debug status & path)\n");
                                     printf("!gsi      - Get System Info\n");
+                                    printf("!cfg      - Check for CFG\n");
+                                    printf("!sig      - Get signature\n");
 
 
                                     printf("\n-- General Commands --\n");
@@ -1509,7 +1698,8 @@ BOOL WINAPI debug(LPCVOID param) {
                                     }
                                 
                                 }
-
+                                
+                                // Check memory protections
                                 else if (strcmp(buff, "!mbi") == 0) {
                                     LPVOID *breakBuffer = (LPVOID*)malloc(100 * sizeof(LPVOID));
                                     
@@ -1543,26 +1733,26 @@ BOOL WINAPI debug(LPCVOID param) {
                                     return FALSE;
                                     }
 
-                                    // Break
                                     breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
                                     if (!breakpoint( pi.dwThreadId , breakBuffer, hProcess)) {
                                         printf("failed to set breakpoint, protected memory region.\n");
                                     }
 
                                 }
-
+                                
+                                // Get current register state dump
                                  else if (strcmp(buff, "!getreg") == 0) {
                                             if (!getThreads(threadId)) {
                                             printf("error getting threads\n");
                                             }
                                     }
-
+                                // CPU info
                                     else if (strcmp(buff, "!cpu") == 0) {
                                         if (!Getcpuinfo()) {
                                             printf("error %lu", GetLastError());
                                         }
                                     }
-
+                                // Dump raw bytes by address
                                     else if (strcmp(buff, "!dump") == 0) {
                                         char breakBuffer[100] = {0};
                                         if (!breakBuffer) {
@@ -1590,6 +1780,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                         }
                                     }
 
+                                    // Get section data 
                                     else if (strcmp(buff, "!var") == 0) {
                                         if (!getVariables(pi.dwProcessId)) {
                                             printf("Error enumerating sections\n");
@@ -1607,6 +1798,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                        }   
                                     }
 
+                                    // Run a DLL (Local)
                                     else if (strcmp(buff, "!ext") == 0) {
 
                                     char *breakBuffer = (char*)malloc(100 * sizeof(char));
@@ -1621,7 +1813,6 @@ BOOL WINAPI debug(LPCVOID param) {
                                     return FALSE;
                                     }
 
-                                    // Break
                                     breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
 
                                     if (!Extensions(breakBuffer)) {
@@ -1629,18 +1820,22 @@ BOOL WINAPI debug(LPCVOID param) {
                                     }
 
                                     }
-
+                                    // Get info from kuser
                                     else if (strcmp(buff, "!gsi") == 0) {
                                         getSystemInfo();
                                     }
-
+                                    // get remote imports
                                     else if (strcmp(buff, "!imports") == 0) {
                                         getRemoteImports(hProcess);
                                     }
-
+                                    // get signature of the file
                                     else if (strcmp(buff, "!sig") == 0) {
                                         //wprintf(L"%ws", imagePath);
                                         getSignature(imagePath);
+                                    }
+                                    // cfg check
+                                    else if (strcmp(buff, "!cfg") == 0) {
+                                        cfgCheck(imagePath);
                                     }
 
                                      } else {
@@ -1659,10 +1854,23 @@ int wmain(int argc, wchar_t* argv[]) {
     LPVOID debugFiber = CreateFiber(0, debug, argv[1]);
 
     if (argc < 2) {
-        puts("\033[35mGlyph - Remote debugger engine by Sleepy\033[0m\n");
-        puts("\x1b[92mUsage:\x1b[0m\n -c <Remote process name> ex. Notepad.exe (ATTACH)\n <path to executable> ex. C:\\Windows\\System32\\notepad.exe (START)");
+        //puts("\033[35mGlyph - Remote debugger engine by Sleepy\033[0m\n");
+        logo();
+        puts("\x1b[92mUsage:\x1b[0m\n-c <Remote process name> ex. Notepad.exe (ATTACH)\n<path to executable> ex. C:\\Windows\\System32\\notepad.exe (START)");
         puts("-l (LIST)");
+
+        puts("\n\x1b[92mDLL parsing:\x1b[0m\n-DLL <path to DLL> -imports\n-DLL <path to DLL> -exports");
         return 0;
+    }
+
+    if (wcscmp(argv[1], L"-DLL") == 0) {
+        if (argc < 4) {
+            puts("-DLL <path to DLL> -imports\n-DLL <path to DLL> -exports");
+            return 0;
+        }
+        dllChoice = argv[3];
+        wprintf(L"%ws\n", dllChoice);
+        isDLL = 1;
     }
 
     if (wcscmp(argv[1], L"-l") == 0) {
@@ -1670,6 +1878,7 @@ int wmain(int argc, wchar_t* argv[]) {
         return 0;
     }
 
+    // sus
     if (argc > 2) {
         secondParam = argv[2];
         //wprintf(L"%ws\n", argv[2]);
