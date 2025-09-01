@@ -1226,6 +1226,76 @@ while(info) {
     return 0;
 }
 
+typedef struct _WIN_CERTIFICATE
+{
+    DWORD       dwLength;
+    WORD        wRevision;
+    WORD        wCertificateType;   // WIN_CERT_TYPE_xxx
+    BYTE        bCertificate[ANYSIZE_ARRAY];
+
+} WIN_CERTIFICATE, *LPWIN_CERTIFICATE;
+
+void* getSignature(wchar_t* readFile) {
+
+FILE* file = _wfopen(readFile, L"rb");
+if (!file) {
+    puts("error\n");
+    return 1;
+}
+
+//wprintf(L"%ws\n", readFile);
+fseek(file, 0, SEEK_END);
+size_t size = ftell(file);
+fseek(file, 0, SEEK_SET);
+
+BYTE* buff = malloc(size);
+
+if (!fread(buff, 1, size, file )) {
+    printf("error\n");
+    return 1;
+ }
+
+PIMAGE_DOS_HEADER dh = (PIMAGE_DOS_HEADER)buff;
+if (dh->e_magic != IMAGE_DOS_SIGNATURE) {
+    printf("Invalid PE file\n");
+    return 1;
+}
+
+PIMAGE_NT_HEADERS nt = (PIMAGE_NT_HEADERS)((BYTE*)dh + dh->e_lfanew);
+if (nt->Signature != IMAGE_NT_SIGNATURE) {
+    printf("error 2\n");
+    return 1;
+}
+
+
+PIMAGE_OPTIONAL_HEADER oh = &nt->OptionalHeader;
+
+if (oh->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress == 0) {
+    printf("Does not have any imports.\n");
+    return 1;
+}
+
+DWORD secOffset = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_SECURITY].VirtualAddress;
+LPWIN_CERTIFICATE id = (LPWIN_CERTIFICATE)(buff + secOffset);
+
+if (secOffset == 0) {
+    printf("No signature.\n");
+    return 1;
+}
+
+
+printf("Signature:\n-----------\n");
+
+for (int i=0; i < id->dwLength; i++) {
+printf("%02X ", id->bCertificate[i]);
+// Learned this 
+if ((i + 1) % 16 == 0) printf("\n");
+}
+
+printf("+++++++++++++++++++++++++++++++++\n");
+return 0;
+}
+
 // Eyes start bleeding now
 BOOL WINAPI debug(LPCVOID param) {
 
@@ -1566,6 +1636,11 @@ BOOL WINAPI debug(LPCVOID param) {
 
                                     else if (strcmp(buff, "!imports") == 0) {
                                         getRemoteImports(hProcess);
+                                    }
+
+                                    else if (strcmp(buff, "!sig") == 0) {
+                                        //wprintf(L"%ws", imagePath);
+                                        getSignature(imagePath);
                                     }
 
                                      } else {
