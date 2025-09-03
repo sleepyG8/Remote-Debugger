@@ -382,7 +382,77 @@ if (!ReadProcessMemory(hProcess, (BYTE*)baseAddress + id.Name,
 }
 
 printf("%s\n", importName);
+
+// use these for looping
+uintptr_t origThunkAddr = (uintptr_t)baseAddress + id.OriginalFirstThunk;
+uintptr_t thunkAddr     = (uintptr_t)baseAddress + id.FirstThunk;
+
+//////////////////////////////////////////
+// these are only for the first read
+IMAGE_THUNK_DATA origThunk = {0};
+IMAGE_THUNK_DATA thunkData = {0};
+
+if (!ReadProcessMemory(hProcess, (LPVOID)((BYTE*)origThunkAddr), &origThunk, sizeof(IMAGE_THUNK_DATA), NULL)) {
+    printf("error %lu\n", GetLastError());
+    return 1;
+}
+
+if (!ReadProcessMemory(hProcess, (LPVOID)((BYTE*)thunkAddr), &thunkData, sizeof(IMAGE_THUNK_DATA), NULL)) {
+    printf("error 2 %lu\n", GetLastError());
+    return 1;
+}
+///////////////////////////////////////////
+
+while (TRUE) {
+        
+        // read orig and thunk addr in the loop again to stop infinite loop
+        if (!ReadProcessMemory(hProcess, (LPCVOID)origThunkAddr, &origThunk, sizeof(origThunk), NULL) || !ReadProcessMemory(hProcess, (LPCVOID)thunkAddr, &thunkData, sizeof(thunkData), NULL)) {
+            printf("error reading thunk\n");
+            break;
+            }
+
+        if (origThunk.u1.AddressOfData == 0) break;
+
+        IMAGE_IMPORT_BY_NAME importByName;
+
+        if (!ReadProcessMemory(hProcess, (LPCVOID)((BYTE*)baseAddress + origThunk.u1.AddressOfData), &importByName, sizeof(IMAGE_IMPORT_BY_NAME), NULL)) {
+            printf("error 3 %lu\n", GetLastError());
+            return 1;
+            }
+
+        if (importByName.Name != NULL) {
+        FARPROC funcAddr = (FARPROC)thunkData.u1.Function;
+        
+
+        // read into larger buffer
+        BYTE importBuffer[256] = {0};  // Enough to hold most function names
+        if (!ReadProcessMemory(hProcess, (LPCVOID)((BYTE*)baseAddress + origThunk.u1.AddressOfData), importBuffer, sizeof(importBuffer), NULL)) {
+        printf("error 3 %lu\n", GetLastError());
+        return 1;
+        }
+
+        PIMAGE_IMPORT_BY_NAME importByName = (PIMAGE_IMPORT_BY_NAME)importBuffer;
+        printf("+ %s\n", importByName->Name);
+        printf("Function Address: %p\n", funcAddr);
+                
+        BYTE hookedBytes[5];
+        ReadProcessMemory(hProcess, funcAddr, &hookedBytes, sizeof(hookedBytes), NULL);
+
+        if (hookedBytes[0] == 0xE9) {
+            printf("+ %s", importByName->Name);
+            printf("Function Address: %p\n", funcAddr);
+            printf("Hook detected! %02X\n", funcAddr);
+        }
+
+        }
+        
+        origThunkAddr += sizeof(IMAGE_THUNK_DATA);
+        thunkAddr     += sizeof(IMAGE_THUNK_DATA);
+            
+        }
     
+printf("+++++++++++++++++++++++++++++++++++++++++++\n");
+
 // Move forward 1 ID just like my ID++
 importDescAddr += sizeof(IMAGE_IMPORT_DESCRIPTOR);
 }
