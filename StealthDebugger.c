@@ -303,7 +303,7 @@ BYTE* VAFromRVA(DWORD rva, PIMAGE_NT_HEADERS nt, BYTE* base) {
     return NULL;
 }
 
-char* getRemoteImports(HANDLE hProcess) {
+int getRemoteImports(HANDLE hProcess) {
 
 printf("Remote Imports:\n");
 
@@ -319,13 +319,13 @@ IMAGE_DOS_HEADER dh;
 
 if (!ReadProcessMemory(hProcess, baseAddress, &dh, sizeof(IMAGE_DOS_HEADER), NULL)) {
     printf("error reading memory of process ID\n");
-   return NULL;
+   return 1;
 }
 
 //checks for a valid PE file
 if (dh.e_magic != IMAGE_DOS_SIGNATURE) {
     printf("error 3 %lu\n", GetLastError());
-    return NULL;
+    return 1;
 } else {
     printf("Valdid PE file: YES-%x\n", dh.e_magic);
 }
@@ -340,7 +340,7 @@ IMAGE_NT_HEADERS32 nt;
 
 if (!ReadProcessMemory(hProcess, (BYTE*)baseAddress + dh.e_lfanew, &nt, sizeof(IMAGE_NT_HEADERS), NULL)) {
     printf("error reading NT headers from remote process\n");
-    return NULL;
+    return 1;
 }
 
 //optional headers
@@ -348,13 +348,13 @@ IMAGE_OPTIONAL_HEADER oh;
 if (!ReadProcessMemory(hProcess, (BYTE*)baseAddress + dh.e_lfanew + offsetof(IMAGE_NT_HEADERS, OptionalHeader), 
                        &oh, sizeof(IMAGE_OPTIONAL_HEADER), NULL)) {
     printf("Error reading Optional Header\n");
-    return NULL;
+    return 1;
 }
 
 //some dlls like ntdll dont have imports
 if (oh.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress == 0) {
     printf("Does not have any imports.\n");
-    return NULL;
+    return 1;
 } 
 
 
@@ -368,7 +368,7 @@ while (importDescAddr != 0) {
 IMAGE_IMPORT_DESCRIPTOR id;
 if (!ReadProcessMemory(hProcess, importDescAddr, &id, sizeof(IMAGE_IMPORT_DESCRIPTOR), NULL)) {
     printf("error reading the import descriptor\n");
-    return NULL;
+    return 1;
 }
 
 //Check
@@ -378,10 +378,10 @@ if (id.Name == 0) break;
 char* importName[256];
 if (!ReadProcessMemory(hProcess, (BYTE*)baseAddress + id.Name, 
                        importName, sizeof(importName), NULL)) {
-    return NULL;
+    return 1;
 }
 
-printf("%s\n", importName);
+printf("%s\n", (char*)importName);
 
 // use these for looping
 uintptr_t origThunkAddr = (uintptr_t)baseAddress + id.OriginalFirstThunk;
@@ -1724,6 +1724,39 @@ for (size_t i = 0; i < 1000; i++) {
     return 0;
 }
 
+BOOL getCpuPower() {
+    
+    HANDLE hNtdll = GetModuleHandle("ntdll.dll");
+
+    typedef ULONG (NTAPI *EtwpGetCpuSpeed_t)(PULONG, PULONG);
+
+    EtwpGetCpuSpeed_t speed = (EtwpGetCpuSpeed_t)GetProcAddress(hNtdll, "EtwpGetCpuSpeed");
+
+    if (!speed) {
+        perror("error\n");
+        return 0;
+    }
+    
+    ULONG num;
+    DWORD check;
+    
+    speed(&num, &check);
+
+    printf("CPU Speed: %.3f GHz\n", num / 1000.0);
+
+    if (check == 231) {
+    printf("check: %lu - Running\n", check);
+    } else if (check == 0) {
+    printf("check: %lu - OK\n", check);
+    } else {
+    printf("check: %lu - STATUS\n", check);
+    }
+    
+
+    return 0;
+
+}
+
 wchar_t* secondParam = NULL; // argv[2]
 wchar_t* dllChoice; // Only for DLLs
 
@@ -1923,6 +1956,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                     printf("!gsi      - Get System Info\n");
                                     printf("!cfg      - Check for CFG\n");
                                     printf("!sig      - Get signature\n");
+                                    printf("!pwr      - Check CPU GHz\n");
 
 
                                     printf("\n-- General Commands --\n");
@@ -2109,6 +2143,10 @@ BOOL WINAPI debug(LPCVOID param) {
                                     // cfg check
                                     else if (strcmp(buff, "!cfg") == 0) {
                                         cfgCheck(imagePath);
+                                    }
+
+                                    else if (strcmp(buff, "!pwr") == 0) {
+                                        getCpuPower();
                                     }
 
                                      } else {
