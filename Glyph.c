@@ -12,6 +12,7 @@
 #pragma comment(lib, "User32.lib")
 #pragma comment(lib, "Advapi32.lib")
 #pragma comment(lib, "Psapi.lib")
+#pragma comment(lib, "dbghelp.lib")
 
 CONTEXT context;
 
@@ -207,9 +208,113 @@ typedef struct _KUSER_SHARED_DATA {
     ULONG Reserved10[210];
 } KUSER_SHARED_DATA, *PKUSER_SHARED_DATA;
 
-
 // KUSER_SHARED_DATA has a fixed address
 #define KUSER_SHARED_DATA_ADDRESS 0x7FFE0000
+
+typedef struct _SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX {
+    PVOID Object;
+    ULONG_PTR UniqueProcessId;
+    ULONG_PTR HandleValue;
+    ULONG GrantedAccess;
+    USHORT CreatorBackTraceIndex;
+    USHORT ObjectTypeIndex;
+    ULONG HandleAttributes;
+    ULONG Reserved;
+} SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX, *PSYSTEM_HANDLE_TABLE_ENTRY_INFO_EX;
+
+typedef struct _SYSTEM_HANDLE_INFORMATION_EX {
+    ULONG_PTR NumberOfHandles;
+    ULONG_PTR Reserved;
+    SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX Handles[1];
+} SYSTEM_HANDLE_INFORMATION_EX, *PSYSTEM_HANDLE_INFORMATION_EX;
+
+//defined my own PEB to get BITFIELD and other structures in the future
+typedef struct _MYPEB {
+    BYTE Reserved1[2];
+    BYTE BeingDebugged;
+        union {
+        BYTE BitField;
+        struct {
+            BYTE ImageUsesLargePages : 1;
+            BYTE IsProtectedProcess : 1;
+            BYTE IsImageDynamicallyRelocated : 1;
+            BYTE SkipPatchingUser32Forwarders : 1;
+            BYTE IsPackagedProcess : 1;
+            BYTE IsAppContainer : 1;
+            BYTE IsProtectedProcessLight : 1;
+            BYTE IsLongPathAwareProcess : 1;
+        };
+    };
+    union {
+    ULONG CrossProcessFlags;
+    struct {
+        ULONG ProcessInJob : 1;
+        ULONG ProcessInitializing : 1;
+        ULONG ProcessUsingVEH : 1;
+        ULONG ProcessUsingVCH : 1;
+        ULONG ProcessUsingFTH : 1;
+        ULONG ReservedBits0 : 27;
+    };
+};
+    PVOID Reserved3[2];
+    PPEB_LDR_DATA Ldr;
+    PRTL_USER_PROCESS_PARAMETERS ProcessParameters;
+    PVOID Reserved4[3];
+    PVOID AtlThunkSListPtr;
+    PVOID Reserved5;
+    ULONG Reserved6;
+    PVOID Reserved7;
+    ULONG Reserved8;
+    ULONG AtlThunkSListPtr32;
+    PVOID Reserved9[45];
+    BYTE Reserved10[96];
+    PPS_POST_PROCESS_INIT_ROUTINE PostProcessInitRoutine;
+    BYTE Reserved11[128];
+    PVOID Reserved12[1];
+    ULONG SessionId;
+} MYPEB;
+
+typedef struct _MY_PEB_LDR_DATA {
+    ULONG Length;
+    BOOLEAN Initialized;
+    PVOID SsHandle;
+    LIST_ENTRY InLoadOrderModuleList;
+    LIST_ENTRY InMemoryOrderModuleList;
+    LIST_ENTRY InInitializationOrderModuleList;
+} MY_PEB_LDR_DATA, *PMY_PEB_LDR_DATA;
+
+typedef struct _MY_LDR_DATA_TABLE_ENTRY {
+    LIST_ENTRY InLoadOrderLinks;
+    LIST_ENTRY InMemoryOrderLinks;
+    LIST_ENTRY InInitializationOrderLinks;
+    PVOID DllBase;
+    PVOID EntryPoint;
+    ULONG SizeOfImage;
+    UNICODE_STRING FullDllName;
+    UNICODE_STRING BaseDllName;
+    // Padding or additional fields could follow if needed
+} MY_LDR_DATA_TABLE_ENTRY;
+
+typedef NTSTATUS(NTAPI* pNtQuerySystemInformation)(
+    SYSTEM_INFORMATION_CLASS, PVOID, ULONG, PULONG);
+
+typedef enum _MEMORY_INFORMATION_CLASS {
+    MemoryBasicInformation
+} MEMORY_INFORMATION_CLASS;
+
+typedef NTSTATUS (NTAPI *pNtQueryVirtualMemory)(
+    HANDLE, PVOID, MEMORY_INFORMATION_CLASS, PVOID, SIZE_T, PSIZE_T
+);
+
+typedef struct _WIN_CERTIFICATE
+{
+    DWORD       dwLength;
+    WORD        wRevision;
+    WORD        wCertificateType;   // WIN_CERT_TYPE_xxx
+    BYTE        bCertificate[ANYSIZE_ARRAY];
+
+} WIN_CERTIFICATE, *LPWIN_CERTIFICATE;
+
 
 BOOL getSystemInfo() {
     KUSER_SHARED_DATA* sharedData = (KUSER_SHARED_DATA*)(0x7FFE0000);
@@ -525,7 +630,7 @@ BOOL getThreads(DWORD *threadId) {
 
     hThread = OpenThread(THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME, FALSE, threadId);
     if (hThread == NULL) {
-        printf("Error: Unable to open thread.\n");
+        printf("Error: Unable to open thread. %lu\n", GetLastError());
         return TRUE;
     }
 
@@ -581,80 +686,8 @@ BOOL getThreads(DWORD *threadId) {
     return TRUE;
 }
 
-//defined my own PEB to get BITFIELD and other structures in the future
-typedef struct _MYPEB {
-    BYTE Reserved1[2];
-    BYTE BeingDebugged;
-        union {
-        BYTE BitField;
-        struct {
-            BYTE ImageUsesLargePages : 1;
-            BYTE IsProtectedProcess : 1;
-            BYTE IsImageDynamicallyRelocated : 1;
-            BYTE SkipPatchingUser32Forwarders : 1;
-            BYTE IsPackagedProcess : 1;
-            BYTE IsAppContainer : 1;
-            BYTE IsProtectedProcessLight : 1;
-            BYTE IsLongPathAwareProcess : 1;
-        };
-    };
-    union {
-    ULONG CrossProcessFlags;
-    struct {
-        ULONG ProcessInJob : 1;
-        ULONG ProcessInitializing : 1;
-        ULONG ProcessUsingVEH : 1;
-        ULONG ProcessUsingVCH : 1;
-        ULONG ProcessUsingFTH : 1;
-        ULONG ReservedBits0 : 27;
-    };
-};
-    PVOID Reserved3[2];
-    PPEB_LDR_DATA Ldr;
-    PRTL_USER_PROCESS_PARAMETERS ProcessParameters;
-    PVOID Reserved4[3];
-    PVOID AtlThunkSListPtr;
-    PVOID Reserved5;
-    ULONG Reserved6;
-    PVOID Reserved7;
-    ULONG Reserved8;
-    ULONG AtlThunkSListPtr32;
-    PVOID Reserved9[45];
-    BYTE Reserved10[96];
-    PPS_POST_PROCESS_INIT_ROUTINE PostProcessInitRoutine;
-    BYTE Reserved11[128];
-    PVOID Reserved12[1];
-    ULONG SessionId;
-} MYPEB;
-
-
-typedef struct _MY_PEB_LDR_DATA {
-    ULONG Length;
-    BOOLEAN Initialized;
-    PVOID SsHandle;
-    LIST_ENTRY InLoadOrderModuleList;
-    LIST_ENTRY InMemoryOrderModuleList;
-    LIST_ENTRY InInitializationOrderModuleList;
-} MY_PEB_LDR_DATA, *PMY_PEB_LDR_DATA;
-
-
-typedef struct _MY_LDR_DATA_TABLE_ENTRY {
-    LIST_ENTRY InLoadOrderLinks;
-    LIST_ENTRY InMemoryOrderLinks;
-    LIST_ENTRY InInitializationOrderLinks;
-    PVOID DllBase;
-    PVOID EntryPoint;
-    ULONG SizeOfImage;
-    UNICODE_STRING FullDllName;
-    UNICODE_STRING BaseDllName;
-    // Padding or additional fields could follow if needed
-} MY_LDR_DATA_TABLE_ENTRY;
-
-
-
 MYPEB pbi;
 WCHAR dllName[MAX_PATH] = {0};
-
 
 BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread, DWORD id) {
     SuspendThread(thread);
@@ -893,9 +926,6 @@ FreeLibrary(hNtDll);
 
 #define STATUS_INFO_LENGTH_MISMATCH ((NTSTATUS)0xC0000004)
 
-typedef NTSTATUS(NTAPI* pNtQuerySystemInformation)(
-    SYSTEM_INFORMATION_CLASS, PVOID, ULONG, PULONG);
-
 BOOL listProcesses() {
           HMODULE hNtDll = GetModuleHandle("ntdll.dll");
     if (!hNtDll) {
@@ -1006,8 +1036,6 @@ BOOL Getcpuinfo() {
 
 }
 
-#pragma comment(lib, "dbghelp.lib")
-
 //setting a breakpoint using the symbol file (I am working on adding normal breaks at addresses next)
 BOOL setBreakpointatSymbol(HANDLE hProcess, const char* symbol, char* module) {
     if (!symbol) return FALSE;
@@ -1050,14 +1078,6 @@ if (!baseAddr) {
     return TRUE;
 }
 
-typedef enum _MEMORY_INFORMATION_CLASS {
-    MemoryBasicInformation
-} MEMORY_INFORMATION_CLASS;
-
-       typedef NTSTATUS (NTAPI *pNtQueryVirtualMemory)(
-    HANDLE, PVOID, MEMORY_INFORMATION_CLASS, PVOID, SIZE_T, PSIZE_T
-);
-
 //gets mbi info which is useful for checking protections on a mem region
 //also, I built this for me to test regions while building this debugger
 BOOL getMBI(HANDLE hProcess, LPVOID addr) {
@@ -1086,8 +1106,6 @@ if (!NT_SUCCESS(status)) {
     return TRUE;
 
 }
-
-
 
 BOOL breakpoint(DWORD threadId, PVOID address, HANDLE hProcess) {
     CONTEXT contextBreak;
@@ -1315,17 +1333,8 @@ while(info) {
     return 0;
 }
 
-typedef struct _WIN_CERTIFICATE
-{
-    DWORD       dwLength;
-    WORD        wRevision;
-    WORD        wCertificateType;   // WIN_CERT_TYPE_xxx
-    BYTE        bCertificate[ANYSIZE_ARRAY];
-
-} WIN_CERTIFICATE, *LPWIN_CERTIFICATE;
-
 // Getting files signature
-void* getSignature(wchar_t* readFile) {
+int getSignature(wchar_t* readFile) {
 
 FILE* file = _wfopen(readFile, L"rb");
 if (!file) {
@@ -1519,6 +1528,47 @@ while (id->Name != 0) {
 }
 
 return 0;
+}
+
+BOOL dumpHandle(ULONG_PTR procNum) {
+
+HANDLE hNtdll = GetModuleHandle("ntdll.dll");
+
+pNtQuerySystemInformation NtQuerySystemInformation = (pNtQuerySystemInformation)GetProcAddress(hNtdll, "NtQuerySystemInformation");
+
+ULONG retlen = 0;
+
+// 64 is for Handles system wide enumeration
+NTSTATUS status = NtQuerySystemInformation(64, NULL, 0, &retlen);
+    if (status != STATUS_INFO_LENGTH_MISMATCH) {
+        printf("Error 0x%X", status);
+        return 1;
+    }
+
+    //Global set
+    SYSTEM_HANDLE_INFORMATION_EX* handles = NULL;
+
+    // loop to get entire retlen becuase handles update a lot
+    while (status == STATUS_INFO_LENGTH_MISMATCH) {
+    handles = (SYSTEM_HANDLE_INFORMATION_EX*)malloc(retlen);
+    status = NtQuerySystemInformation(64, handles, retlen, &retlen);
+    if (status == STATUS_INFO_LENGTH_MISMATCH) {
+        free(handles);
+    }
+    }
+
+    for (ULONG_PTR i=0; i < handles->NumberOfHandles; i++) {
+     SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX data = handles->Handles[i];
+
+     // Compare
+    if (procNum == data.UniqueProcessId) {
+         printf("PID: %llu | Handle: 0x%llx | Type: %hu\n", (unsigned long long)data.UniqueProcessId, (unsigned long long)data.HandleValue, data.ObjectTypeIndex);
+        }
+    
+    }
+
+
+    return TRUE;
 }
 
 ///////////////////////////////////////////////////////////////////
@@ -1717,10 +1767,6 @@ for (size_t i = 0; i < 1000; i++) {
 
 }
 
-
-
-
-
     return 0;
 }
 
@@ -1862,9 +1908,7 @@ BOOL WINAPI debug(LPCVOID param) {
                             buff[strcspn(buff, "\n")] = '\0';
                             
                             if (buff != NULL) {
-            
-                            //buff[sizeBuff + 1] = '\0';
-                            
+                                        
                             if (strcmp(buff, "!reg") == 0) {
                                printf("Process ID: %lu\n", pi.dwProcessId);
                                printf("Thread ID: %lu\n", pi.dwThreadId);
@@ -1957,6 +2001,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                     printf("!cfg      - Check for CFG\n");
                                     printf("!sig      - Get signature\n");
                                     printf("!pwr      - Check CPU GHz\n");
+                                    printf("!handles  - Dump Handles\n");
 
 
                                     printf("\n-- General Commands --\n");
@@ -1990,24 +2035,30 @@ BOOL WINAPI debug(LPCVOID param) {
                                 }
 
                                 else if (strcmp(buff,"!symbreak") == 0) {
+
                                     char *breakBuffer = (char*)malloc(100 * sizeof(char));
                                     if (!breakBuffer) {
                                         printf("Memory allocation error\n");
                                     }
+
                                     printf("\x1b[92m[-]\x1b[0m Which symbol to break at?\n");
+
                                     if  (!fgets(breakBuffer, 99, stdin)) {
                                     printf("buffer to large\n");
                                     }
+
                                     breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
                                     // pdb break
                                     if (!setBreakpointatSymbol(hProcess, breakBuffer, arg)) {
                                         printf("Cannot set breakpoint must be from a .pdb file\n");
                                     }
                                 
+                                    free(breakBuffer);
                                 }
                                 
                                 // Check memory protections
                                 else if (strcmp(buff, "!mbi") == 0) {
+
                                     LPVOID *breakBuffer = (LPVOID*)malloc(100 * sizeof(LPVOID));
                                     
                                     if (!breakBuffer) {
@@ -2025,6 +2076,8 @@ BOOL WINAPI debug(LPCVOID param) {
                                     if (!getMBI(hProcess, breakBuffer)) {
                                         printf("error");
                                     }
+
+                                    free(breakBuffer);
                                 }
 
                                    else if (strcmp(buff, "!break") == 0) {
@@ -2045,6 +2098,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                         printf("failed to set breakpoint, protected memory region.\n");
                                     }
 
+                                    free(breakBuffer);
                                 }
                                 
                                 // Get current register state dump
@@ -2085,6 +2139,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                         if (!readRawAddr(hProcess, (LPVOID)addr, 50)) {
                                         printf("Error invalid address\n");
                                         }
+                                        
                                     }
 
                                     // Get section data 
@@ -2126,6 +2181,8 @@ BOOL WINAPI debug(LPCVOID param) {
                                         printf("Error loading extension\n");
                                     }
 
+                                    free(breakBuffer);
+
                                     }
                                     // Get info from kuser
                                     else if (strcmp(buff, "!gsi") == 0) {
@@ -2149,11 +2206,42 @@ BOOL WINAPI debug(LPCVOID param) {
                                         getCpuPower();
                                     }
 
+                                    else if (strcmp(buff, "!handles") == 0) {
+
+                                        char *breakBuffer = (char*)malloc(100 * sizeof(char));
+                                        if (!breakBuffer) {
+                                           printf("Memory allocation error\n");
+                                        }
+                                    
+                                        printf("\x1b[92m[-]\x1b[0m Proccess Number? - Enter for current process\n");
+                                   
+                                        if  (!fgets(breakBuffer, 99, stdin)) {
+                                        printf("buffer to large\n");
+                                        return FALSE;
+                                        }
+
+                                        breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
+
+                                        ULONG_PTR value = strtoul(breakBuffer, NULL, 0);
+
+                                        DWORD temp;
+                                        if (value == 0) {
+                                            temp = pi.dwProcessId;
+                                        } else {
+                                            temp = value;
+                                        }
+
+                                        dumpHandle(temp);
+
+                                        free(breakBuffer);
+                                    }
+
                                      } else {
                                          printf("run -help- to see the help menu.\n");
                                         }
                             }                  
-                        }                                            
+                        }   
+                                                                 
     WaitForInputIdle(pi.hProcess, INFINITE);
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
@@ -2213,5 +2301,6 @@ int wmain(int argc, wchar_t* argv[]) {
           // Cleanup
 
 }
+    
 return 0;
 }
