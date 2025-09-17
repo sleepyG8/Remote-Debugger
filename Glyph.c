@@ -13,6 +13,7 @@
 #pragma comment(lib, "Advapi32.lib")
 #pragma comment(lib, "Psapi.lib")
 #pragma comment(lib, "dbghelp.lib")
+#pragma comment(lib, "Shell32.lib")
 
 CONTEXT context;
 
@@ -778,6 +779,7 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread, DWOR
         } else {
             wprintf(L"\x1b[92m[+]\x1b[0m Full Path: %ls\n", imagePath);
             myparams.fullPath = _wcsdup(imagePath);
+            //wprintf(L"%ws\n", myparams.fullPath);
            // free(myparams.fullPath);
         }
     }
@@ -821,7 +823,9 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread, DWOR
         }
 
         // Setting Global struct
-        if (wcscmp(imagePath, name)) {
+        if (wcscmp(myparams.fullPath, name) == 0) {
+        //wprintf(L"%ws - %ws\n", myparams.fullPath, name);
+        //puts("hello");
         peb.Base = ldrEntry.DllBase;
         }
         wprintf(L"\x1b[92m[+]\x1b[0m Module: %s\n", name);
@@ -1830,6 +1834,32 @@ BOOL getCpuPower() {
 
 }
 
+SHELLEXECUTEINFOW sei = {
+    .cbSize = sizeof(SHELLEXECUTEINFOW),
+    .fMask = SEE_MASK_FLAG_NO_UI,
+    .hwnd = NULL,
+    .lpVerb = L"open",
+    .lpFile = L"https:////github.com//sleepyG8//Remote-Debugger",
+    .lpParameters = NULL,
+    .lpDirectory = NULL,
+    .nShow = SW_SHOWNORMAL,
+    .hInstApp = NULL,
+    .lpIDList = NULL,
+    .lpClass = NULL,
+    .hkeyClass = NULL,
+    .dwHotKey = 0,
+    .hIcon = NULL,
+    .hProcess = NULL
+};
+
+BOOL docs() {
+
+if (ShellExecuteExW(&sei)) {
+    wprintf(L"Browser launched successfully.\n");
+} else {
+    wprintf(L"Failed to launch browser. Error: %lu\n", GetLastError());
+}
+}
 wchar_t* secondParam = NULL; // argv[2]
 wchar_t* dllChoice; // Only for DLLs
 // Eyes start bleeding now
@@ -2043,6 +2073,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                     printf("kill      - Close the debugged process\n");
                                     printf("help      - Display additional commands\n");
                                     printf("!ext      - Load extension (DLL)\n");
+                                    printf("docs      - Go to documentation online\n");
 
                                     printf("==============================\n");
 
@@ -2269,6 +2300,10 @@ BOOL WINAPI debug(LPCVOID param) {
                                         free(breakBuffer);
                                     }
 
+                                    else if (strcmp(buff, "docs") == 0) {
+                                        docs();
+                                    }
+
                                      } else {
                                          printf("run -help- to see the help menu.\n");
                                         }
@@ -2282,6 +2317,12 @@ BOOL WINAPI debug(LPCVOID param) {
 }
 
 int wmain(int argc, wchar_t* argv[]) {
+
+    if (!IsDebuggerPresent) {
+        puts("No debugging the debugger");
+        return 0;
+    }
+
     LPVOID fiberMain = ConvertThreadToFiber(NULL); 
     LPVOID debugFiber = CreateFiber(0, debug, argv[1]);
 
@@ -2359,8 +2400,6 @@ int wmain(int argc, wchar_t* argv[]) {
         breakBuff[strcspn(breakBuff, "\n")] = '\0';
 
 
-    } else {
-        printf("hello\n");
     }
         //wprintf(L"%ws\n", argv[2]);
     }
