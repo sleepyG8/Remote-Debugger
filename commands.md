@@ -1,12 +1,14 @@
 ===== Debugger Usage =====
 
 -- Registers & Breakpoints --
+
 `!reg` – Print process registers  
 `!getreg` – Print registers at current memory location  
 `!break` – Set a breakpoint and read registers  
 `!synbreak` – Break at a debug symbol *(not stable yet)*  
 
 -- Memory & Data Inspection --
+
 `!dump` – Dump a raw address *(retry if ERROR_ACCESS_DENIED)*  
 `!mbi` – Get MBI info *(only for unprotected processes)*  
 `!bit` – Display Bitfield data  
@@ -15,6 +17,7 @@
 `!imports` – Get Remote Imports  
 
 -- Process & System Info --
+
 `!proc` – Display all running processes  
 `!cpu` – Display CPU data per processor  
 `!attr` – Retrieve object attributes  
@@ -27,6 +30,7 @@
 `!handles` – Dump Handles  
 
 -- General Commands --
+
 `clear` – Clear the console screen  
 `exit` – Terminate debugging session  
 `kill` – Close the debugged process  
