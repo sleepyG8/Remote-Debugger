@@ -562,7 +562,7 @@ while (TRUE) {
         BYTE patch[10];
         memset(patch, 0xCC, sizeof(patch));
 
-        if (strcmp(importByName->Name, breakFunction) == 0 && breakFunction != NULL) {
+        if (breakFunction != NULL && strcmp(importByName->Name, breakFunction) == 0) {
             if (!WriteProcessMemory(hProcess, funcAddr, &patch, sizeof(patch), NULL)) {
                 printf("error\n");
                 return 0;
