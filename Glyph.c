@@ -315,7 +315,6 @@ typedef struct _WIN_CERTIFICATE
 
 } WIN_CERTIFICATE, *LPWIN_CERTIFICATE;
 
-
 BOOL getSystemInfo() {
     KUSER_SHARED_DATA* sharedData = (KUSER_SHARED_DATA*)(0x7FFE0000);
     KSYSTEM_TIME systemTime = sharedData->SystemTime;
@@ -408,11 +407,16 @@ BYTE* VAFromRVA(DWORD rva, PIMAGE_NT_HEADERS nt, BYTE* base) {
     return NULL;
 }
 
-int getRemoteImports(HANDLE hProcess) {
+int breakpointSet = 0;
+int getRemoteImports(HANDLE hProcess, char* breakFunction) {
 
+printf("+++++++++++++++++++++++++++++++++++++++++++\n");
+
+if (breakpointSet == 0) {
 printf("Remote Imports:\n");
-
 printf("Base: %p\n", (void*)peb.Base);
+}
+
 
 //getting base address
 BYTE* baseAddress = peb.Base;
@@ -486,7 +490,9 @@ if (!ReadProcessMemory(hProcess, (BYTE*)baseAddress + id.Name,
     return 1;
 }
 
+if (breakpointSet == 0) {
 printf("%s\n", (char*)importName);
+}
 
 // use these for looping
 uintptr_t origThunkAddr = (uintptr_t)baseAddress + id.OriginalFirstThunk;
@@ -537,16 +543,35 @@ while (TRUE) {
         }
 
         PIMAGE_IMPORT_BY_NAME importByName = (PIMAGE_IMPORT_BY_NAME)importBuffer;
+
+        if (breakpointSet == 0)  {
         printf("+ %s\n", importByName->Name);
         printf("Function Address: %p\n", funcAddr);
+        }
                 
         BYTE hookedBytes[5];
         ReadProcessMemory(hProcess, funcAddr, &hookedBytes, sizeof(hookedBytes), NULL);
 
         if (hookedBytes[0] == 0xE9) {
-            printf("+ %s", importByName->Name);
-            printf("Function Address: %p\n", funcAddr);
-            printf("Hook detected! %02X\n", funcAddr);
+            printf("\033[31m[!]\033[0m [Hook detected! at ");
+            printf("%s ", importByName->Name);
+            printf("Function Address: %p]\n", funcAddr);
+        }
+
+
+        BYTE patch[10];
+        memset(patch, 0xCC, sizeof(patch));
+
+        if (strcmp(importByName->Name, breakFunction) == 0 && breakFunction != NULL) {
+            if (!WriteProcessMemory(hProcess, funcAddr, &patch, sizeof(patch), NULL)) {
+                printf("error\n");
+                return 0;
+            } else {
+                printf("\n++++++++++++++++\033[31mBreakPoints\033[0m++++++++++++++++\n");
+
+                printf("\033[31mWrote a breakpoint at 0x%llX on function [%s]\033[0m\n", funcAddr, importByName->Name);
+                return 0;
+            }
         }
 
         }
@@ -556,7 +581,9 @@ while (TRUE) {
             
         }
     
+if (breakpointSet == 0) {
 printf("+++++++++++++++++++++++++++++++++++++++++++\n");
+}
 
 // Move forward 1 ID just like my ID++
 importDescAddr += sizeof(IMAGE_IMPORT_DESCRIPTOR);
@@ -1805,8 +1832,10 @@ BOOL getCpuPower() {
 
 wchar_t* secondParam = NULL; // argv[2]
 wchar_t* dllChoice; // Only for DLLs
-
 // Eyes start bleeding now
+
+char *breakBuff;
+
 BOOL WINAPI debug(LPCVOID param) {
 
     wchar_t *arg = (wchar_t*)param;
@@ -1893,6 +1922,10 @@ BOOL WINAPI debug(LPCVOID param) {
             GetPEBFromAnotherProcess(hProcess, pi.dwThreadId, pi.dwProcessId);
 
             printf("thread address/ID: %p\n", &threadId);
+
+            if (breakpointSet) {
+                getRemoteImports(hProcess, breakBuff);
+            }
 
             ////////////////////////////////////////////////////////////////////
             // Each strcmp() is a feature, go down the list                   //
@@ -2190,7 +2223,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                     }
                                     // get remote imports
                                     else if (strcmp(buff, "!imports") == 0) {
-                                        getRemoteImports(hProcess);
+                                        getRemoteImports(hProcess, NULL);
                                     }
                                     // get signature of the file
                                     else if (strcmp(buff, "!sig") == 0) {
@@ -2255,7 +2288,7 @@ int wmain(int argc, wchar_t* argv[]) {
     if (argc < 2) {
         //puts("\033[35mGlyph - Remote debugger engine by Sleepy\033[0m\n");
         logo();
-        puts("\x1b[92mUsage:\x1b[0m\n-c <Remote process name> ex. Notepad.exe (ATTACH)\n<path to executable> ex. C:\\Windows\\System32\\notepad.exe (START)");
+        puts("\x1b[92mUsage:\x1b[0m\n-c <Remote process name> ex. Notepad.exe (ATTACH)\n<path to executable> ex. C:\\Windows\\System32\\notepad.exe (START)\n-c <process> -b (BREAKPOINT)");
         puts("-l (LIST)");
 
         puts("\n\x1b[92mDLL parsing:\x1b[0m\n-DLL <path to DLL> -imports\n-DLL <path to DLL> -exports");
@@ -2274,6 +2307,25 @@ int wmain(int argc, wchar_t* argv[]) {
         isDLL = 1;
     }
 
+    /*
+    if (wcscmp(argv[2], L"-b") == 0) {
+        breakpointSet = 1;
+        
+        breakBuff = (char*)malloc(100 * sizeof(char));
+                                             
+        printf("\x1b[92m[-]\x1b[0m What address to break at?\n");
+                                   
+        if  (!fgets(breakBuff, 99, stdin)) {
+            printf("buffer to large\n");
+            return FALSE;
+            }
+
+        breakBuff[strcspn(breakBuff, "\n")] = '\0';
+
+
+    }
+    */
+
     if (wcscmp(argv[1], L"-ELF") == 0) {
         if (argc < 3) {
             printf("Path to .so file\n");
@@ -2290,6 +2342,26 @@ int wmain(int argc, wchar_t* argv[]) {
     // sus
     if (argc > 2) {
         secondParam = argv[2];
+
+        if (argv[3]) {
+
+        breakpointSet = 1;
+        
+        breakBuff = (char*)malloc(100 * sizeof(char));
+                                             
+        printf("\x1b[92m[-]\x1b[0m What address to break at?\n");
+                                   
+        if  (!fgets(breakBuff, 99, stdin)) {
+            printf("buffer to large\n");
+            return FALSE;
+            }
+
+        breakBuff[strcspn(breakBuff, "\n")] = '\0';
+
+
+    } else {
+        printf("hello\n");
+    }
         //wprintf(L"%ws\n", argv[2]);
     }
 
@@ -2301,6 +2373,5 @@ int wmain(int argc, wchar_t* argv[]) {
           // Cleanup
 
 }
-    
 return 0;
 }
