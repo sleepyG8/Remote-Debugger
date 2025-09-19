@@ -40,6 +40,8 @@
 
 ==============================
 
+If you hit any permission issues, or an image base of 000000 just exit and re connect with the -c command.
+
 -- Extentions --
 
 Extentions are just Dlls can be loaded into a remote process to do things that cannot be done outside of the remote process.
