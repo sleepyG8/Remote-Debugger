@@ -2052,6 +2052,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                     printf("!var      - Display section data\n");
                                     printf("!veh      - VEH Info\n");
                                     printf("!imports  - Get Remote Imports\n");
+                                    printf("!Inject   - Inject an extention Dll - Must have the DebuggerInjector.exe\n");
 
 
                                     printf("\n-- Process & System Info --\n");
@@ -2270,6 +2271,15 @@ BOOL WINAPI debug(LPCVOID param) {
                                         getCpuPower();
                                     }
 
+                                    else if (strcmp(buff, "!Inject") == 0) {
+                                        
+                                            STARTUPINFO siI = { sizeof(si) };
+                                            PROCESS_INFORMATION piI = { 0 };
+                                        if (!CreateProcessA("DebuggerInjector.exe", NULL, NULL, NULL, 0, CREATE_NEW_CONSOLE, NULL, NULL, &siI, &piI)) {
+                                            printf("Error starting up the Injector make sure its in the debuggers directory\n");
+                                        }
+                                    }
+
                                     else if (strcmp(buff, "!handles") == 0) {
 
                                         char *breakBuffer = (char*)malloc(100 * sizeof(char));
@@ -2336,6 +2346,18 @@ int wmain(int argc, wchar_t* argv[]) {
 
         puts("\n\x1b[92mELF parsing:\x1b[0m\n-ELF <path to .so>");
         return 0;
+    }
+
+    if (wcscmp(argv[1], L"-open") == 0) {
+         STARTUPINFO si = { sizeof(si) };
+         PROCESS_INFORMATION pi = { 0 };
+        if (!CreateProcessW(argv[2], NULL, NULL, NULL, 0, 0, NULL, NULL, &si, &pi)) {
+            printf("Error creating process %lu\n", GetLastError());
+            return 1;
+        } else {
+            printf("Process created!, -c <ProcName> to connect");
+            return 0;
+        }
     }
 
     if (wcscmp(argv[1], L"-DLL") == 0) {
