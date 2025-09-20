@@ -635,7 +635,7 @@ BOOL readRawAddr(HANDLE hProcess, LPVOID base, SIZE_T bytesToRead) {
     }
     // Print 100 raw memory bytes
     printf("\x1b[92m[+]\x1b[0m Chars:\n");
-    for (SIZE_T i = 0; i < 100; i++) {
+    for (SIZE_T i = 0; i < bytesRead; i++) {
         if (isprint(buff[i])) {  // Very useful to print only valid chars
         printf("%c ", buff[i]);;
     }
@@ -643,7 +643,7 @@ BOOL readRawAddr(HANDLE hProcess, LPVOID base, SIZE_T bytesToRead) {
     printf("\n");
 
     printf("\x1b[92m[+]\x1b[0m Raw: \n");
-    for (SIZE_T i = 0; i < 100; i++) {
+    for (SIZE_T i = 0; i < bytesRead; i++) {
     printf("%02X ", buff[i]);        
     }
     
@@ -2200,8 +2200,16 @@ BOOL WINAPI debug(LPCVOID param) {
                                         return FALSE;
                                         }
 
+                                        char bytes2Read[100];
+                                        puts("How many bytes to read?");
+                                        fgets(bytes2Read, 99, stdin);
+
+                                        bytes2Read[strcspn(bytes2Read, "\n")] = '\0';
+
+                                        DWORD bytesNum = strtoul(bytes2Read, NULL, 10);
+
                                         // Read Raw function 
-                                        if (!readRawAddr(hProcess, (LPVOID)addr, 50)) {
+                                        if (!readRawAddr(hProcess, (LPVOID)addr, bytesNum)) {
                                         printf("Error invalid address\n");
                                         }
                                         
