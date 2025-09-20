@@ -1,6 +1,6 @@
-===== Remote-Debugger Command Reference =====
+# ===== Remote-Debugger Command Reference =====
 
--- Registers & Breakpoints --
+## -- Registers & Breakpoints --
 
 `!reg`       - Print process registers
 
@@ -10,7 +10,7 @@
 
 `!synbreak`  - Break at a debug symbol (not stable yet)
 
--- Memory & Data Inspection --
+## -- Memory & Data Inspection --
 
 `!dump`      - Dump a raw address (retry if ERROR_ACCESS_DENIED)
 
@@ -26,7 +26,7 @@
 
 `!Inject`    - Inject an extension DLL (requires DebuggerInjector.exe)
 
--- Process & System Info --
+## -- Process & System Info --
 
 `!proc`      - Display all running processes
 
@@ -48,7 +48,7 @@
 
 `!handles`   - Dump Handles
 
--- General Commands --
+## -- General Commands --
 
 `clear`      - Clear the console screen
 
@@ -68,7 +68,7 @@ If you hit any permission issues, or an image base of 000000 just exit and re co
 
 ============================================
 
--- Extentions --
+## -- Extentions --
 
 Extentions are just Dlls can be loaded into a remote process to do things that cannot be done outside of the remote process.
 For example, I provided a heap dumper and also a full function tracer named Sly.dll. If you inject these Dlls into a remote process, either by the full version of this debugger or creating your own injection module, they will provide a more in depth view of a process. These are only really needed for specific use cases like function tracing and heap dumping, but in order for my debugger to stay stealthy, I most definitely cannot use debug apis because whats the fun in that? 
