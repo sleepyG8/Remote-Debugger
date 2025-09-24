@@ -649,7 +649,21 @@ BOOL readRawAddr(HANDLE hProcess, LPVOID base, SIZE_T bytesToRead) {
     
     printf("\n");
 
-    free(buff); // Free allocated memory
+    typedef BOOL (WINAPI* pCheckEntropy)(char* buff, size_t size);
+
+    //Entropy Check
+    HANDLE hEdll = LoadLibrary("entropyCheck.dll");
+    if (hEdll) {
+
+    pCheckEntropy CE = (pCheckEntropy)GetProcAddress(hEdll, "CheckEntropy");
+    if (!CE) return 1;
+    puts("\nEntropy Checker Extention:\n-------------------------------");
+
+    CE(buff, bytesRead);
+
+    }
+    
+    //free(buff); // Free allocated memory
     return TRUE;
 }
 
@@ -1860,6 +1874,7 @@ if (ShellExecuteExW(&sei)) {
     wprintf(L"Failed to launch browser. Error: %lu\n", GetLastError());
 }
 }
+
 wchar_t* secondParam = NULL; // argv[2]
 wchar_t* dllChoice; // Only for DLLs
 // Eyes start bleeding now
@@ -2280,11 +2295,36 @@ BOOL WINAPI debug(LPCVOID param) {
                                     }
 
                                     else if (strcmp(buff, "!Inject") == 0) {
-                                        
                                             STARTUPINFO siI = { sizeof(si) };
                                             PROCESS_INFORMATION piI = { 0 };
                                         if (!CreateProcessA("DebuggerInjector.exe", NULL, NULL, NULL, 0, CREATE_NEW_CONSOLE, NULL, NULL, &siI, &piI)) {
                                             printf("Error starting up the Injector make sure its in the debuggers directory\n");
+                                        }
+                                    }
+
+                                    else if (strcmp(buff, "!wor") == 0) {
+                                            STARTUPINFO siO = { sizeof(si) };
+                                            PROCESS_INFORMATION piO = { 0 };
+                                    
+                                    char *breakBuffer = (char*)malloc(100 * sizeof(char));
+                                    if (!breakBuffer) {
+                                        printf("Memory allocation error\n");
+                                    }
+                                    
+                                    printf("\x1b[92m[-]\x1b[0m Which path to Load? (Object Directory Ex: \\Device)\n");
+                                   
+                                    if  (!fgets(breakBuffer, 99, stdin)) {
+                                    printf("buffer to large\n");
+                                    return FALSE;
+                                    }
+
+                                    char finalbuff[100];
+
+                                    snprintf(finalbuff, 99, "cmd.exe /k wor.exe %s & pause", breakBuffer);
+
+                                    breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
+                                        if (!CreateProcessA(NULL, finalbuff, NULL, NULL, 0, CREATE_NEW_CONSOLE, NULL, NULL, &siO, &piO)) {
+                                            printf("Make sure wor.exe is inside of the current Directory, use docs to get it.\n");
                                         }
                                     }
 
