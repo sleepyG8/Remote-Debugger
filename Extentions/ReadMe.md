@@ -13,3 +13,7 @@ This is a full object namespace walker
 It takes in a first parameter as a object directory path (Ex: \Device) and enumerates all of the entries withing the given directory.
 
 The second "optional" parameter is either a harddisk or a shadowcopy to walk, it also can restore deleted files if your ever in a pinch with the copy command.
+
+## entropyCheck.dll
+
+If in the debuggers directory it gives a shannon entropy rating 1-8 when !dump is ran
