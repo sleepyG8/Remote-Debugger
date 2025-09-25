@@ -409,7 +409,7 @@ BYTE* VAFromRVA(DWORD rva, PIMAGE_NT_HEADERS nt, BYTE* base) {
 }
 
 int breakpointSet = 0;
-int getRemoteImports(HANDLE hProcess, char* breakFunction) {
+int getRemoteImports(HANDLE hProcess, char* breakFunction, BOOL entry) {
 
 printf("+++++++++++++++++++++++++++++++++++++++++++\n");
 
@@ -461,6 +461,13 @@ if (!ReadProcessMemory(hProcess, (BYTE*)baseAddress + dh.e_lfanew + offsetof(IMA
     return 1;
 }
 
+if (entry == 1) {
+uintptr_t entry = (uintptr_t)baseAddress + oh.AddressOfEntryPoint;
+printf("Entry: %p\n", (void*)entry);
+return 0;
+}
+
+
 //some dlls like ntdll dont have imports
 if (oh.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress == 0) {
     printf("Does not have any imports.\n");
@@ -480,6 +487,7 @@ if (!ReadProcessMemory(hProcess, importDescAddr, &id, sizeof(IMAGE_IMPORT_DESCRI
     printf("error reading the import descriptor\n");
     return 1;
 }
+
 
 //Check
 if (id.Name == 0) break;
@@ -1969,7 +1977,7 @@ BOOL WINAPI debug(LPCVOID param) {
             printf("thread address/ID: %p\n", &threadId);
 
             if (breakpointSet) {
-                getRemoteImports(hProcess, breakBuff);
+                getRemoteImports(hProcess, breakBuff, 0);
             }
 
             ////////////////////////////////////////////////////////////////////
@@ -2063,10 +2071,12 @@ BOOL WINAPI debug(LPCVOID param) {
                                     printf("\n-- Memory & Data Inspection --\n");
                                     printf("!dump     - Dump a raw address (retry if ERROR_ACCESS_DENIED)\n");
                                     printf("!mbi      - Get MBI info (only for unprotected processes)\n");
-                                    printf("!bit      - Display Bitfield data\n");
+                                    printf("!bit      - Display Bitfield data - PPL check\n");
                                     printf("!var      - Display section data\n");
                                     printf("!veh      - VEH Info\n");
                                     printf("!imports  - Get Remote Imports\n");
+                                    printf("!entry    - Get entry address\n");
+                                    printf("!wor      - Walker object ranger - Object scanner\n");
                                     printf("!Inject   - Inject an extention Dll - Must have the DebuggerInjector.exe\n");
 
 
@@ -2278,7 +2288,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                     }
                                     // get remote imports
                                     else if (strcmp(buff, "!imports") == 0) {
-                                        getRemoteImports(hProcess, NULL);
+                                        getRemoteImports(hProcess, NULL, 0);
                                     }
                                     // get signature of the file
                                     else if (strcmp(buff, "!sig") == 0) {
@@ -2360,6 +2370,10 @@ BOOL WINAPI debug(LPCVOID param) {
 
                                     else if (strcmp(buff, "docs") == 0) {
                                         docs();
+                                    }
+
+                                    else if (strcmp(buff, "!entry") == 0) {
+                                        getRemoteImports(hProcess, NULL, 1);
                                     }
 
                                      } else {
