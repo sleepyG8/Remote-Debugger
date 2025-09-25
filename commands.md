@@ -24,6 +24,8 @@
 
 `!imports`   - Get Remote Imports
 
+`!entry`     - Get entrypoint address
+
 `!Inject`    - Inject an extension DLL (requires DebuggerInjector.exe)
 
 ## -- Process & System Info --
