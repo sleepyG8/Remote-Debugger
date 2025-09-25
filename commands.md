@@ -26,6 +26,8 @@
 
 `!entry`     - Get entrypoint address
 
+`!wor`       - walker object ranger
+
 `!Inject`    - Inject an extension DLL (requires DebuggerInjector.exe)
 
 ## -- Process & System Info --
