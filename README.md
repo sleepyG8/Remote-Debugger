@@ -39,6 +39,8 @@ Glyph is written in pure C—because Windows NT is written in C, and introspecti
 
 This debugger doesn’t just inspect—it interprets. It treats faults as lineage, offsets as identity, and mutation as meaning. Every project on this repo ties into Glyph. This is the mythology.
 
+![Demo](./debugger.gif)
+
 -------------------------------------------------
 To-Do Glyphs
 -------------------------------------------------
