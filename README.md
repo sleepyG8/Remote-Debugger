@@ -15,13 +15,21 @@ cl /MD Glyph.c
 Features
 -------------------------------------------------
 🧬 PEB Ritualization: Deep walking of undocumented PEB fields, bitfields, and process ancestry.
+
 🧠 VEH Invocation: Fault-based introspection using symbolic traps and debug register cloaking.
+
 🧷 Remote Import Mapping: IAT parsing, hook detection, and symbolic breakpoint injection.
+
 🔍 Raw Memory Dumping: Disassemble live memory regions, inspect entropy, and visualize execution flow.
+
 🧱 Section Rituals: Enumerate .text, .data, and mutation zones from remote binaries.
+
 🧙‍♂️ Undocumented API Glyphs: EtwpGetCpuSpeed, LsaGetUserName, and more—mapped and invoked.
+
 🧵 Thread Ancestry Mapping: Suspend, inspect, and manipulate thread contexts across processes.
+
 🧼 Stealth Engine: Fiber-based injection, DR register manipulation, and anti-detection rituals.
+
 📜 Symbolic CLI: Type 'help' inside the debugger for a full command ritual map.
 
 -------------------------------------------------
