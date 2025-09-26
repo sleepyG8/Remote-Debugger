@@ -1916,6 +1916,77 @@ if (ShellExecuteExW(&sei)) {
 }
 }
 
+BOOL printHelp() {
+
+    printf("\n===== Debugger Usage =====\n");
+    printf("-- Registers & Breakpoints --\n");
+                                    
+    printf("!reg      - Print process registers\n");
+    
+    printf("!getreg   - Print registers at current memory location\n");
+    
+    printf("!break    - Set a breakpoint and read registers\n");
+    
+    printf("!synbreak - Break at a debug symbol (not stable yet)\n");
+
+    printf("\n-- Memory & Data Inspection --\n");
+    
+    printf("!dump     - Dump a raw address (retry if ERROR_ACCESS_DENIED)\n");
+    
+    printf("!mbi      - Get MBI info (only for unprotected processes)\n");
+    
+    printf("!bit      - Display Bitfield data - PPL check\n");
+    
+    printf("!var      - Display section data\n");
+    
+    printf("!veh      - VEH Info\n");
+    
+    printf("!imports  - Get Remote Imports\n");
+    
+    printf("!entry    - Get entry address\n");
+    
+    printf("!wor      - Walker object ranger - Object scanner\n");
+    
+    printf("!Inject   - Inject an extention Dll - Must have the DebuggerInjector.exe\n");
+
+    printf("\n-- Process & System Info --\n");
+    
+    printf("!proc     - Display all running processes\n");
+    
+    printf("!cpu      - Display CPU data per processor\n");
+    
+    printf("!attr     - Retrieve object attributes\n");
+    
+    printf("!peb      - Display PEB details\n");
+    
+    printf("!params   - Show process parameters (debug status & path)\n");
+    
+    printf("!gsi      - Get System Info\n");
+    
+    printf("!cfg      - Check for CFG\n");
+    
+    printf("!sig      - Get signature\n");
+    
+    printf("!pwr      - Check CPU GHz\n");
+    
+    printf("!handles  - Dump Handles\n");
+
+    printf("\n-- General Commands --\n");
+    
+    printf("clear     - Clear the console screen\n");
+    
+    printf("exit      - Terminate debugging session\n");
+    
+    printf("kill      - Close the debugged process\n");
+    
+    printf("help      - Display additional commands\n");
+    
+    printf("!ext      - Load extension (DLL)\n");
+    
+    printf("docs      - Go to documentation online\n");
+
+    printf("==============================\n");
+}
 wchar_t* secondParam = NULL; // argv[2]
 wchar_t* dllChoice; // Only for DLLs
 // Eyes start bleeding now
@@ -1930,28 +2001,6 @@ BOOL WINAPI debug(LPCVOID param) {
     wchar_t *process = arg;
 
     logo();
-
-    // DLL stuff
-    if (wcscmp(process, L"-DLL") == 0) {
-
-        wprintf("%ws\n", dllChoice);
-        if (wcscmp(dllChoice, L"-imports") == 0) {
-        dllImports(secondParam);
-        return 0;
-        }
-
-        else if (wcscmp(dllChoice, L"-exports") == 0) {
-        dllExports(secondParam);
-        return 0;
-        }
-
-        else {
-            puts("-imports or -exports");
-        }
-
-        puts("\nsee ya!\n");
-        return 0;
-    }
 
     // ATTACH stuff
     if (wcscmp(process, L"-c") == 0) {
@@ -2094,47 +2143,8 @@ BOOL WINAPI debug(LPCVOID param) {
                                    }
 /////////-HELP-/////////
                                 else if (strcmp(buff, "help") == 0) {
-                                    printf("\n===== Debugger Usage =====\n");
-                                    printf("-- Registers & Breakpoints --\n");
-                                    printf("!reg      - Print process registers\n");
-                                    printf("!getreg   - Print registers at current memory location\n");
-                                    printf("!break    - Set a breakpoint and read registers\n");
-                                    printf("!synbreak - Break at a debug symbol (not stable yet)\n");
 
-                                    printf("\n-- Memory & Data Inspection --\n");
-                                    printf("!dump     - Dump a raw address (retry if ERROR_ACCESS_DENIED)\n");
-                                    printf("!mbi      - Get MBI info (only for unprotected processes)\n");
-                                    printf("!bit      - Display Bitfield data - PPL check\n");
-                                    printf("!var      - Display section data\n");
-                                    printf("!veh      - VEH Info\n");
-                                    printf("!imports  - Get Remote Imports\n");
-                                    printf("!entry    - Get entry address\n");
-                                    printf("!wor      - Walker object ranger - Object scanner\n");
-                                    printf("!Inject   - Inject an extention Dll - Must have the DebuggerInjector.exe\n");
-
-
-                                    printf("\n-- Process & System Info --\n");
-                                    printf("!proc     - Display all running processes\n");
-                                    printf("!cpu      - Display CPU data per processor\n");
-                                    printf("!attr     - Retrieve object attributes\n");
-                                    printf("!peb      - Display PEB details\n");
-                                    printf("!params   - Show process parameters (debug status & path)\n");
-                                    printf("!gsi      - Get System Info\n");
-                                    printf("!cfg      - Check for CFG\n");
-                                    printf("!sig      - Get signature\n");
-                                    printf("!pwr      - Check CPU GHz\n");
-                                    printf("!handles  - Dump Handles\n");
-
-
-                                    printf("\n-- General Commands --\n");
-                                    printf("clear     - Clear the console screen\n");
-                                    printf("exit      - Terminate debugging session\n");
-                                    printf("kill      - Close the debugged process\n");
-                                    printf("help      - Display additional commands\n");
-                                    printf("!ext      - Load extension (DLL)\n");
-                                    printf("docs      - Go to documentation online\n");
-
-                                    printf("==============================\n");
+                                    printHelp();
 
                                 }
 
@@ -2346,8 +2356,9 @@ BOOL WINAPI debug(LPCVOID param) {
                                     }
 
                                     else if (strcmp(buff, "!wor") == 0) {
-                                            STARTUPINFO siO = { sizeof(si) };
-                                            PROCESS_INFORMATION piO = { 0 };
+                                            
+                                        STARTUPINFO siO = { sizeof(si) };
+                                        PROCESS_INFORMATION piO = { 0 };
                                     
                                     char *breakBuffer = (char*)malloc(100 * sizeof(char));
                                     if (!breakBuffer) {
@@ -2436,14 +2447,52 @@ int wmain(int argc, wchar_t* argv[]) {
         logo();
         puts("\x1b[92mUsage:\x1b[0m\n-c <Remote process name> ex. Notepad.exe (ATTACH)\n<path to executable> ex. C:\\Windows\\System32\\notepad.exe (START)\n-c <process> -b (BREAKPOINT)");
         puts("-l (LIST)");
+        puts("-open <Path> (optional: -open <Path> -suspended)(start a process)");
+        puts("-c <ProcName> -b (CC Breakpoint, must install a handler)");
 
         puts("\n\x1b[92mDLL parsing:\x1b[0m\n-DLL <path to DLL> -imports\n-DLL <path to DLL> -exports");
 
-        puts("\n\x1b[92mELF parsing:\x1b[0m\n-ELF <path to .so>");
+        puts("\n\x1b[92mELF parsing:\x1b[0m\n-ELF <path to .so>\n");
+
+        puts("run with -help for more help\n");
+
         return 0;
     }
 
+    if (wcscmp(argv[1], L"-help") == 0) {
+        logo();
+        puts("\x1b[92mUsage:\x1b[0m\n[+] -c <Remote process name> ex. Notepad.exe (ATTACH)\n[+] <path to executable> ex. C:\\Windows\\System32\\notepad.exe (START)");
+        puts("[+] -l (LIST)");
+        puts("[+] -open <Path> (optional: -open <Path> -suspended)(start a process)");
+        puts("[+] -c <ProcName> -b (CC Breakpoint, must install a handler)");
+
+        puts("\n\x1b[92mDLL parsing:\x1b[0m\n[+]-DLL <path to DLL> -imports\n[+] -DLL <path to DLL> -exports");
+
+        puts("\n\x1b[92mELF parsing:\x1b[0m\n[+] -ELF <path to .so>\n");
+
+        puts("\x1b[92mAttached features:\x1b[0m");
+        printHelp();
+
+        return 0;
+    }
+
+
     if (wcscmp(argv[1], L"-open") == 0) {
+
+        if (argv[3]) {
+
+         STARTUPINFO si = { sizeof(si) };
+         PROCESS_INFORMATION pi = { 0 };
+        if (!CreateProcessW(argv[2], NULL, NULL, NULL, 0, CREATE_SUSPENDED, NULL, NULL, &si, &pi)) {
+            printf("Error creating process %lu\n", GetLastError());
+            return 1;
+        } else {
+            printf("Process created! and suspended, -c <ProcName> to connect");
+            return 0;
+        }
+
+    }
+
          STARTUPINFO si = { sizeof(si) };
          PROCESS_INFORMATION pi = { 0 };
         if (!CreateProcessW(argv[2], NULL, NULL, NULL, 0, 0, NULL, NULL, &si, &pi)) {
@@ -2455,23 +2504,13 @@ int wmain(int argc, wchar_t* argv[]) {
         }
     }
 
-    if (wcscmp(argv[1], L"-DLL") == 0) {
-        if (argc < 4) {
-            puts("-DLL <path to DLL> -imports\n-DLL <path to DLL> -exports");
-            return 0;
-        }
-        dllChoice = argv[3];
-        wprintf(L"%ws\n", dllChoice);
-        isDLL = 1;
-    }
-
-    /*
+    
     if (wcscmp(argv[2], L"-b") == 0) {
         breakpointSet = 1;
         
         breakBuff = (char*)malloc(100 * sizeof(char));
                                              
-        printf("\x1b[92m[-]\x1b[0m What address to break at?\n");
+        printf("\x1b[92m[-]\x1b[0m What address to break at? Might crash the proc\n");
                                    
         if  (!fgets(breakBuff, 99, stdin)) {
             printf("buffer to large\n");
@@ -2482,7 +2521,7 @@ int wmain(int argc, wchar_t* argv[]) {
 
 
     }
-    */
+    
 
     if (wcscmp(argv[1], L"-ELF") == 0) {
         if (argc < 3) {
@@ -2500,6 +2539,31 @@ int wmain(int argc, wchar_t* argv[]) {
     // sus
     if (argc > 2) {
         secondParam = argv[2];
+
+        // DLL stuff
+        if (wcscmp(argv[1], L"-DLL") == 0) {
+
+        if (argc < 4) {
+            puts("-DLL <path to DLL> -imports\n-DLL <path to DLL> -exports");
+            return 0;
+        }
+
+        dllChoice = argv[3];
+        wprintf(L"%ws\n", dllChoice);
+
+        
+        if (wcscmp(dllChoice, L"-imports") == 0) {
+        dllImports(secondParam);
+        return 0;
+        }
+
+        else if (wcscmp(dllChoice, L"-exports") == 0) {
+        dllExports(secondParam);
+        return 0;
+        }
+
+        return 0;
+    }
 
         if (argv[3]) {
 
