@@ -6,8 +6,10 @@ Glyph is not just a debugger. It’s a symbolic introspection engine—built to 
 -------------------------------------------------
 Compile
 -------------------------------------------------
-cl /MD Glyph.c
 
+```bash
+cl /MD Glyph.c
+```
 - Requires Capstone: unzip capstone.zip and place capstone.lib in the working directory.
 - No Bs. Just raw NT rituals.
 
