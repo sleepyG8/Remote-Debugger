@@ -13,6 +13,9 @@
 
 ---
 
+# Compiling
+Compile with cl /MD glyph.c - you must unzip capstone.zip and place capstone.lib into the working directory. This is to correctly build the dissassembler in.
+
 A advanced debugger I wrote capable of debugging remote processes, this is a work in progress and will be updated frequently for more features
 
 The stealth file contains my new POC using fibers to bypass windows protections
