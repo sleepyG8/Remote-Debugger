@@ -5,6 +5,7 @@
 #include <sddl.h> 
 #include <AclAPI.h>
 #include <dbghelp.h>
+#include "capstone/capstone.h"
 //add terminate
 
 #define STATUS_SUCCESS ((NTSTATUS)0x00000000L)
@@ -14,6 +15,7 @@
 #pragma comment(lib, "Psapi.lib")
 #pragma comment(lib, "dbghelp.lib")
 #pragma comment(lib, "Shell32.lib")
+#pragma comment(lib, "capstone.lib")
 
 CONTEXT context;
 
@@ -315,6 +317,32 @@ typedef struct _WIN_CERTIFICATE
     BYTE        bCertificate[ANYSIZE_ARRAY];
 
 } WIN_CERTIFICATE, *LPWIN_CERTIFICATE;
+
+BOOL disasm(uint8_t *code, int size, uint64_t address) {
+    csh handle;
+    cs_insn *insn;
+    size_t count;
+
+    // Initialize Capstone
+    if (cs_open(CS_ARCH_X86, CS_MODE_64, &handle) != CS_ERR_OK) {
+        printf("Failed to initialize Capstone\n");
+        return -1;
+    }
+
+    // Disassemble
+    count = cs_disasm(handle, code, size, address, 0, &insn);
+    if (count > 0) {
+        for (size_t i = 0; i < count; i++) {
+            printf("0x%"PRIx64":\t%s\t%s\n", insn[i].address, insn[i].mnemonic, insn[i].op_str, insn[i].bytes);
+        }
+        cs_free(insn, count);
+    } else {
+        printf("Failed to disassemble\n");
+    }
+
+    cs_close(&handle);
+    return 0;
+}
 
 BOOL getSystemInfo() {
     KUSER_SHARED_DATA* sharedData = (KUSER_SHARED_DATA*)(0x7FFE0000);
@@ -671,6 +699,10 @@ BOOL readRawAddr(HANDLE hProcess, LPVOID base, SIZE_T bytesToRead) {
 
     }
     
+    // capstone
+    puts("\n------\x1b[92m[+]Dissassembly:\x1b[0m------");
+
+    disasm(buff, bytesToRead, base);
     //free(buff); // Free allocated memory
     return TRUE;
 }
@@ -1287,7 +1319,8 @@ if (!ReadProcessMemory(hProcess, (BYTE*)peb.Base + sectionOffset + (i * sizeof(I
 
     printf("\x1b[92m[+]\x1b[0m %s\n", (char*)section.Name);
 
-    printf("\x1b[92m[+]\x1b[0m Section: %s | Address: 0x%X | Size: %d\n", section.Name, section.VirtualAddress, section.SizeOfRawData);
+    BYTE* address = (BYTE*)peb.Base + section.VirtualAddress;
+    printf("\x1b[92m[+]\x1b[0m Section: %s | Address: 0x%p | Size: %d\n", section.Name, (void*)address, section.SizeOfRawData);
 
     char buffer[0x1000];
     if (!ReadProcessMemory(hProcess, (BYTE*)peb.Base + section.VirtualAddress, &buffer, sizeof(buffer), NULL)) {
