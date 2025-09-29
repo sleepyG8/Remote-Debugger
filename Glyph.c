@@ -318,6 +318,15 @@ typedef struct _WIN_CERTIFICATE
 
 } WIN_CERTIFICATE, *LPWIN_CERTIFICATE;
 
+// storing all imports and its address into a struct
+typedef struct {
+    char name[150];
+    FARPROC address;
+} Imports;
+
+Imports* imports = NULL;
+size_t countImport = 0;
+
 BOOL disasm(uint8_t *code, int size, uint64_t address) {
     csh handle;
     cs_insn *insn;
@@ -333,6 +342,20 @@ BOOL disasm(uint8_t *code, int size, uint64_t address) {
     count = cs_disasm(handle, code, size, address, 0, &insn);
     if (count > 0) {
         for (size_t i = 0; i < count; i++) {
+
+            for (int k=0; k < countImport; k++) {
+                                
+                //printf("%s\n", imports[k].name);
+
+                if (insn[i].address == imports[k].address) {
+                    printf("%s ->\n0x%"PRIx64":\t%s\t%s\n", 
+                    imports->name,
+                    (uint64_t)imports->address,  
+                    insn[i].mnemonic, 
+                    insn[i].op_str);
+                    continue;
+                }
+            }
             printf("0x%"PRIx64":\t%s\t%s\n", insn[i].address, insn[i].mnemonic, insn[i].op_str, insn[i].bytes);
         }
         cs_free(insn, count);
@@ -435,6 +458,29 @@ BYTE* VAFromRVA(DWORD rva, PIMAGE_NT_HEADERS nt, BYTE* base) {
 
     return NULL;
 }
+
+
+size_t capacity = 0;
+// making Dynamic struct
+void addImport(char* funcName, FARPROC addr) {
+    if (countImport >= capacity) {
+        capacity = (capacity == 0) ? 4 : capacity * 2;
+        imports = realloc(imports, capacity * sizeof(Imports));
+        if (!imports) {
+            printf("Memory allocation failed\n");
+            exit(1);
+        }
+    }
+
+    strncpy(imports[countImport].name, funcName, sizeof(imports[countImport].name) - 1);
+       
+    //printf("func: %s\n", imports[countImport].name);
+
+    imports[countImport].address = addr;
+    countImport++;
+}
+
+
 
 int breakpointSet = 0;
 int getRemoteImports(HANDLE hProcess, char* breakFunction, BOOL entry) {
@@ -583,16 +629,18 @@ while (TRUE) {
 
         if (breakpointSet == 0)  {
         printf("+ %s\n", importByName->Name);
-        printf("Function Address: %p\n", funcAddr);
+        printf("Function Address: 0x%p\n", funcAddr);
         }
-                
+
+        addImport(importByName->Name, funcAddr);
+        
         BYTE hookedBytes[5];
         ReadProcessMemory(hProcess, funcAddr, &hookedBytes, sizeof(hookedBytes), NULL);
 
         if (hookedBytes[0] == 0xE9) {
             printf("\033[31m[!]\033[0m [Hook detected! at ");
             printf("%s ", importByName->Name);
-            printf("Function Address: %p]\n", funcAddr);
+            printf("Function Address: 0x%p]\n", funcAddr);
         }
 
 
@@ -1987,6 +2035,86 @@ BOOL printHelp() {
 
     printf("==============================\n");
 }
+
+BOOL samedata = FALSE;
+char *LastData = NULL;
+
+unsigned char* clipBoard() {
+
+    //printf("%lu", samedata);
+    if (IsClipboardFormatAvailable(CF_TEXT)) {
+
+        HANDLE hData = GetClipboardData(CF_TEXT);
+  
+        if (hData == NULL) {
+            printf("error\n");
+             return FALSE;
+            }
+  
+            unsigned char *clipData = (char*)GlobalLock(hData);
+  
+            //printf("%s and %s\n", LastData, clipData);
+  
+            if (LastData == NULL || strcmp(LastData, clipData) != 0) {
+                //printf("Its diff Lastdata %s\n", LastData);
+                samedata = FALSE;
+             } else {
+               //printf("Its the same %s\n", LastData);
+               samedata = TRUE;
+            }
+
+
+            if (clipData != NULL && !samedata) {
+                LastData = strdup((char*)clipData);
+                GlobalUnlock(hData);
+                return (unsigned char *)clipData;
+            
+            } else {
+                LastData = strdup(clipData);
+                GlobalUnlock(hData);
+                return "nope";
+            }
+
+}
+}
+
+DWORD WINAPI clipThread(LPVOID lpParam) { 
+
+while (1) {
+
+        Sleep(300);
+
+
+    if (OpenClipboard(NULL)) {
+                                   
+        unsigned char* clipData = clipBoard();
+
+        ULONGLONG addr = 0;
+        if (sscanf((const char*)clipData, "%llx", &addr) != 1 || addr == 0) {    
+            CloseClipboard();           
+            continue;
+        }
+
+        if (strcmp(clipData, "nope") == 0) {
+            CloseClipboard();
+            continue;
+        };
+         
+        // Address check
+        
+        if (strncmp(clipData, "0x", 2) == 0 && strlen(clipData) < 50) {
+        
+            printf("Printing from clipboard...\n");
+            readRawAddr(lpParam, addr, 500);
+        
+        }
+                                         
+        CloseClipboard();
+                    
+    }
+   
+}
+}
 wchar_t* secondParam = NULL; // argv[2]
 wchar_t* dllChoice; // Only for DLLs
 // Eyes start bleeding now
@@ -2051,6 +2179,9 @@ BOOL WINAPI debug(LPCVOID param) {
                 printf("Error getting the thread ID...\n");
                 return FALSE;
             } 
+
+            CreateThread(NULL, 0, clipThread, hProcess, NULL, NULL);
+
        
             getThreads(threadId);
 
@@ -2066,7 +2197,12 @@ BOOL WINAPI debug(LPCVOID param) {
             // Each strcmp() is a feature, go down the list                   //
             ////////////////////////////////////////////////////////////////////
 
-                    while (1) {                           
+                    while (1) {   
+                        
+                               // unsigned char* clipData;
+    
+    
+    
                             
                             char buff[50];
                             printf("\033[35mDebug>>\033[0m");
