@@ -347,14 +347,23 @@ BOOL disasm(uint8_t *code, int size, uint64_t address) {
                                 
                 //printf("%s\n", imports[k].name);
 
-                if (insn[i].address == imports[k].address) {
+                char addrStr[32];
+                sprintf(addrStr, "0x%"PRIx64, (uint64_t)imports[k].address);
+
+                                //Sleep(100);
+
+                //printf("%s - %s\n", insn[i].op_str, addrStr);
+
+
+                if (strstr(insn[i].op_str, addrStr) != NULL) {
                     printf("%s ->\n0x%"PRIx64":\t%s\t%s\n", 
-                    imports->name,
-                    (uint64_t)imports->address,  
+                    imports[k].name,
+                    (uint64_t)imports[k].address,  
                     insn[i].mnemonic, 
                     insn[i].op_str);
                     continue;
                 }
+
             }
             printf("0x%"PRIx64":\t%s\t%s\n", insn[i].address, insn[i].mnemonic, insn[i].op_str, insn[i].bytes);
         }
@@ -2021,17 +2030,19 @@ BOOL printHelp() {
 
     printf("\n-- General Commands --\n");
     
-    printf("clear     - Clear the console screen\n");
+    printf("clear      - Clear the console screen\n");
     
-    printf("exit      - Terminate debugging session\n");
+    printf("exit       - Terminate debugging session\n");
     
-    printf("kill      - Close the debugged process\n");
+    printf("kill       - Close the debugged process\n");
     
-    printf("help      - Display additional commands\n");
+    printf("help       - Display additional commands\n");
     
-    printf("!ext      - Load extension (DLL)\n");
+    printf("!ext       - Load extension (DLL)\n");
     
-    printf("docs      - Go to documentation online\n");
+    printf("docs       - Go to documentation online\n");
+
+    printf("start clip - start clip disasm shortcut\n");
 
     printf("==============================\n");
 }
@@ -2120,6 +2131,8 @@ wchar_t* dllChoice; // Only for DLLs
 // Eyes start bleeding now
 
 char *breakBuff;
+BOOL clipSniper = 0;
+BOOL clipRan = 0;
 
 BOOL WINAPI debug(LPCVOID param) {
 
@@ -2179,9 +2192,6 @@ BOOL WINAPI debug(LPCVOID param) {
                 printf("Error getting the thread ID...\n");
                 return FALSE;
             } 
-
-            CreateThread(NULL, 0, clipThread, hProcess, NULL, NULL);
-
        
             getThreads(threadId);
 
@@ -2201,7 +2211,15 @@ BOOL WINAPI debug(LPCVOID param) {
                         
                                // unsigned char* clipData;
     
-    
+                            if (clipSniper == 1) {
+                             HANDLE hThread = CreateThread(NULL, 0, clipThread, hProcess, NULL, NULL);
+                             if (hThread) {
+                                puts("Clipboard is being sniped for addressess! Anything starting with 0x");
+                                clipSniper = 0;
+                                clipRan = 1;
+                             }
+
+                            }
     
                             
                             char buff[50];
@@ -2555,6 +2573,15 @@ BOOL WINAPI debug(LPCVOID param) {
                                     else if (strcmp(buff, "!entry") == 0) {
                                         getRemoteImports(hProcess, NULL, 1);
                                     }
+
+                                    else if (strcmp(buff, "start clip") == 0) {
+                                        if (clipRan == 0) {
+                                            clipSniper = 1;
+                                        } else {
+                                            puts("Its already started up...\n");
+                                        }   
+                                    }
+                                    
 
                                      } else {
                                          printf("run -help- to see the help menu.\n");
