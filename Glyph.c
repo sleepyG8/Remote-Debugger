@@ -1990,6 +1990,10 @@ BOOL printHelp() {
     
     printf("!synbreak - Break at a debug symbol (not stable yet)\n");
 
+    printf("!cc       - int3 break at a function address\n");
+
+    printf("!ccraw    - Break at a supplied address\n");
+
     printf("\n-- Memory & Data Inspection --\n");
     
     printf("!dump     - Dump a raw address (retry if ERROR_ACCESS_DENIED)\n");
