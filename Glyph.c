@@ -825,9 +825,9 @@ BOOL getThreads(DWORD *threadId) {
     return TRUE;
 }
 
+PVOID ntdllBase;
 MYPEB pbi;
 WCHAR dllName[MAX_PATH] = {0};
-
 BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread, DWORD id) {
     SuspendThread(thread);
     HMODULE hNtDll = GetModuleHandle("ntdll.dll");
@@ -938,6 +938,10 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread, DWOR
         //wprintf(L"%ws - %ws\n", myparams.fullPath, name);
         //puts("hello");
         peb.Base = ldrEntry.DllBase;
+        }
+
+        if (wcscmp(L"C:\\Windows\\SYSTEM32\\ntdll.dll", name) == 0) {
+            ntdllBase = ldrEntry.DllBase;
         }
         wprintf(L"\x1b[92m[+]\x1b[0m Module: %s\n", name);
         printf("\x1b[92m[+]\x1b[0m Base Address: 0x%llX\n", ldrEntry.DllBase);
@@ -1331,9 +1335,9 @@ if (!hProcess) {
 }
 
 printf("base: %p\n", peb.Base);
+
 //reading dos header
 IMAGE_DOS_HEADER dh;
-
 if (!ReadProcessMemory(hProcess, peb.Base, &dh, sizeof(IMAGE_DOS_HEADER), NULL)) {
     printf("error reading memory of process ID\n");
    return FALSE;
@@ -2001,6 +2005,10 @@ BOOL printHelp() {
     printf("!imports  - Get Remote Imports\n");
     
     printf("!entry    - Get entry address\n");
+
+    printf("!vehtable - Read remote VEH table\n");
+
+    printf("!dllcheck - walk remote dll sections\n");
     
     printf("!wor      - Walker object ranger - Object scanner\n");
     
@@ -2126,6 +2134,164 @@ while (1) {
    
 }
 }
+
+// Shout out to rad98 - https://github.com/rad9800/misc/blob/main/bypasses/ClearVeh.c
+BOOL checkRemoteDLL(HANDLE hProcess, PVOID base, int size2read) {
+
+printf("base: %p\n", ntdllBase);
+
+if (base) {
+    ntdllBase = base;
+}
+
+//reading dos header
+IMAGE_DOS_HEADER dh;
+if (!ReadProcessMemory(hProcess, ntdllBase, &dh, sizeof(IMAGE_DOS_HEADER), NULL)) {
+    printf("error reading memory of process ID\n");
+   return FALSE;
+}
+
+//checks for a valid PE file
+if (dh.e_magic != IMAGE_DOS_SIGNATURE) {
+    printf("error 3 %lu\n", GetLastError());
+    return FALSE;
+} else {
+    printf("\x1b[92m[+]\x1b[0m Valid PE file: YES-%x\n", dh.e_magic);
+}
+
+//getting nt headers
+IMAGE_NT_HEADERS nt;
+if (!ReadProcessMemory(hProcess, (BYTE*)ntdllBase + dh.e_lfanew, &nt, sizeof(IMAGE_NT_HEADERS), NULL)) {
+    printf("error reading NT headers from remote process\n");
+    return FALSE;
+}
+
+//getting offset and starting a for loop to get all sections
+DWORD sectionOffset = dh.e_lfanew + sizeof(IMAGE_NT_HEADERS);
+IMAGE_SECTION_HEADER section;
+
+//looping through
+for (int i=0; i < nt.FileHeader.NumberOfSections; i++) {
+
+    
+if (!ReadProcessMemory(hProcess, (BYTE*)ntdllBase + sectionOffset + (i * sizeof(IMAGE_SECTION_HEADER)), &section, sizeof(IMAGE_SECTION_HEADER), NULL)) {
+    printf("Error reading section memory %lu", GetLastError());
+    }
+
+    printf("\x1b[92m[+]\x1b[0m %s\n", (char*)section.Name);
+
+    BYTE* address = (BYTE*)ntdllBase + section.VirtualAddress;
+    printf("\x1b[92m[+]\x1b[0m Section: %s | Address: 0x%p | Size: %d\n", section.Name, (void*)address, section.SizeOfRawData);
+
+    char* buffer = malloc(section.SizeOfRawData);
+    if (!ReadProcessMemory(hProcess, (BYTE*)ntdllBase + section.VirtualAddress, buffer, section.SizeOfRawData, NULL)) {
+        printf("Error reading data %lu\n", GetLastError());
+    } else {
+            for (int i = 0; i < size2read; i++) {
+            if (isprint(buffer[i])) { 
+        printf("%c ", buffer[i]);
+    }
+    }
+
+    printf("\n");
+
+    for (int i = 0; i < size2read; i++) {
+        printf("%02X ", (BYTE)buffer[i]);
+    }    
+
+    printf("\n");
+
+
+    }
+    
+}
+}
+
+typedef struct _VECTXCPT_CALLOUT_ENTRY {
+    LIST_ENTRY Links;                        // Doubly linked list: Flink & Blink
+    PVOID reserved[2];                       
+    PVECTORED_EXCEPTION_HANDLER VectoredHandler;
+} VECTXCPT_CALLOUT_ENTRY, *PVECTXCPT_CALLOUT_ENTRY;
+
+
+BOOL getVehTable(HANDLE hProcess, int size2read) {
+
+printf("base: %p\n", ntdllBase);
+
+//reading dos header
+IMAGE_DOS_HEADER dh;
+if (!ReadProcessMemory(hProcess, ntdllBase, &dh, sizeof(IMAGE_DOS_HEADER), NULL)) {
+    printf("error reading memory of process ID\n");
+   return FALSE;
+}
+
+//checks for a valid PE file
+if (dh.e_magic != IMAGE_DOS_SIGNATURE) {
+    printf("error 3 %lu\n", GetLastError());
+    return FALSE;
+} else {
+    printf("\x1b[92m[+]\x1b[0m Valid PE file: YES-%x\n", dh.e_magic);
+}
+
+//getting nt headers
+IMAGE_NT_HEADERS nt;
+if (!ReadProcessMemory(hProcess, (BYTE*)ntdllBase + dh.e_lfanew, &nt, sizeof(IMAGE_NT_HEADERS), NULL)) {
+    printf("error reading NT headers from remote process\n");
+    return FALSE;
+}
+
+//getting offset and starting a for loop to get all sections
+DWORD sectionOffset = dh.e_lfanew + sizeof(IMAGE_NT_HEADERS);
+IMAGE_SECTION_HEADER section;
+
+//looping through
+for (int i=0; i < nt.FileHeader.NumberOfSections; i++) {
+
+    
+if (!ReadProcessMemory(hProcess, (BYTE*)ntdllBase + sectionOffset + (i * sizeof(IMAGE_SECTION_HEADER)), &section, sizeof(IMAGE_SECTION_HEADER), NULL)) {
+    printf("Error reading section memory %lu", GetLastError());
+    }
+
+    if (strcmp(section.Name, ".data") == 0) {
+    printf("\x1b[92m[+]\x1b[0m %s\n", (char*)section.Name);
+
+    BYTE* address = (BYTE*)ntdllBase + section.VirtualAddress;
+    printf("\x1b[92m[+]\x1b[0m Section: %s | Address: 0x%p | Size: %d\n", section.Name, (void*)address, section.SizeOfRawData);
+
+    LIST_ENTRY* buffer = (LIST_ENTRY*)malloc(section.SizeOfRawData);
+    if (!ReadProcessMemory(hProcess, (BYTE*)ntdllBase + section.VirtualAddress, buffer, section.SizeOfRawData, NULL)) {
+        printf("Error reading data %lu\n", GetLastError());
+    }
+
+    // Common list walk
+    LIST_ENTRY* head = buffer;
+    LIST_ENTRY* next = head->Flink;
+
+    while (next != head) {
+        VECTXCPT_CALLOUT_ENTRY entry;
+        if (!ReadProcessMemory(hProcess, next, &entry, sizeof(VECTXCPT_CALLOUT_ENTRY), NULL)) {
+            printf("error\n");
+            return 0;
+        }
+
+        printf("Encoded Handler: %p\n", entry.VectoredHandler);
+        printf("Decoded Handler: %p\n", DecodePointer(entry.VectoredHandler));
+
+        
+        next = entry.Links.Flink;
+    }
+
+
+
+
+
+    }
+    
+}
+}
+
+
+
 wchar_t* secondParam = NULL; // argv[2]
 wchar_t* dllChoice; // Only for DLLs
 // Eyes start bleeding now
@@ -2437,6 +2603,54 @@ BOOL WINAPI debug(LPCVOID param) {
                                         
                                     }
 
+                                    else if (strcmp(buff, "!cc") == 0) {
+                                        
+                                        char breakBuffer[100] = {0};
+                                        if (!breakBuffer) {
+                                        printf("Memory allocation error\n");
+                                        }
+
+                                        printf("Which function to break at? (Ex: GetProcAddress)\n");
+
+                                        if (!fgets(breakBuffer, 99, stdin)) {
+                                         printf("buffer to large\n");
+                                        }
+
+                                        breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
+
+                                       if (!getRemoteImports(hProcess, breakBuffer, 0)) {
+                                        printf("Error setting the breakpoint at %s\n", breakBuffer);
+                                       }
+
+                                    }
+
+                                    else if (strcmp(buff, "!ccraw") == 0) {
+
+                                        char breakBuffer[100] = {0};
+                                        if (!breakBuffer) {
+                                        printf("Memory allocation error\n");
+                                        }
+
+                                        printf("Which address to break at? (Ex: 0x00007FFCEFEF7C60)\n");
+
+                                        if (!fgets(breakBuffer, 99, stdin)) {
+                                         printf("buffer to large\n");
+                                        }
+
+                                        breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
+
+                                        // convert string to address 
+                                        void* targetAddress = (void*)strtoull(breakBuffer, NULL, 0);
+
+                                        BYTE cc[5] = {0xCC, 0xCC, 0xCC, 0xCC, 0xCC};
+                                        if (!WriteProcessMemory(hProcess, targetAddress, cc, sizeof(cc), NULL)) {
+                                            printf("Failed to write breakpoint at %s: error %lu\n", breakBuffer, GetLastError());
+                                        } else {
+                                            printf("Wrote a breakpoint at %s\n", breakBuffer);
+                                        }
+
+                                    }
+
                                     // Get section data 
                                     else if (strcmp(buff, "!var") == 0) {
                                         if (!getVariables(pi.dwProcessId)) {
@@ -2580,6 +2794,31 @@ BOOL WINAPI debug(LPCVOID param) {
                                         } else {
                                             puts("Its already started up...\n");
                                         }   
+                                    }
+
+                                    else if (strcmp(buff, "!dllcheck") == 0) {
+
+                                        char *breakBuffer = (char*)malloc(100 * sizeof(char));
+                                        if (!breakBuffer) {
+                                           printf("Memory allocation error\n");
+                                        }
+                                    
+                                        printf("\x1b[92m[-]\x1b[0m Address to get sections?\n");
+                                   
+                                        if  (!fgets(breakBuffer, 99, stdin)) {
+                                        printf("buffer to large\n");
+                                        return FALSE;
+                                        }
+
+                                        breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
+
+                                        void* targetAddress = (void*)strtoull(breakBuffer, NULL, 0);
+
+                                        checkRemoteDLL(hProcess, targetAddress, 100);
+                                    }
+
+                                    else if (strcmp(buff, "!vehtable") == 0) {
+                                        getVehTable(hProcess, 100);
                                     }
                                     
 
