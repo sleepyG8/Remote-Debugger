@@ -943,6 +943,10 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread, DWOR
         if (wcscmp(L"C:\\Windows\\SYSTEM32\\ntdll.dll", name) == 0) {
             ntdllBase = ldrEntry.DllBase;
         }
+
+        // Patching Infinite loop bug on some Windows versions
+        if (ldrEntry.DllBase == 0x0) break;
+        
         wprintf(L"\x1b[92m[+]\x1b[0m Module: %s\n", name);
         printf("\x1b[92m[+]\x1b[0m Base Address: 0x%llX\n", ldrEntry.DllBase);
         printf("+++++++++++++++++++++++++++++++++\n");
