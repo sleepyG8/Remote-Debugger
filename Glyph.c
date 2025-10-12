@@ -356,7 +356,7 @@ BOOL disasm(uint8_t *code, int size, uint64_t address) {
 
 
                 if (strstr(insn[i].op_str, addrStr) != NULL) {
-                    printf("%s ->\n0x%"PRIx64":\t%s\t%s\n", 
+                    printf("\x1b[32m%s ->\x1b[0m 0x%"PRIx64":\t%s\t%s\n", 
                     imports[k].name,
                     (uint64_t)imports[k].address,  
                     insn[i].mnemonic, 
@@ -2294,7 +2294,14 @@ if (!ReadProcessMemory(hProcess, (BYTE*)ntdllBase + sectionOffset + (i * sizeof(
 }
 }
 
+BOOL writeMem(HANDLE hProcess, void* address, BYTE* data, int size) {
 
+    if (!WriteProcessMemory(hProcess, address, data, size, NULL)) {
+        printf("Error writing to process memory at 0x%p: Error %lu\n", address, GetLastError());
+    }
+
+
+}
 
 wchar_t* secondParam = NULL; // argv[2]
 wchar_t* dllChoice; // Only for DLLs
@@ -2824,6 +2831,42 @@ BOOL WINAPI debug(LPCVOID param) {
                                     else if (strcmp(buff, "!vehtable") == 0) {
                                         getVehTable(hProcess, 100);
                                     }
+
+                                    else if (strcmp(buff, "!write") == 0) {
+
+                                        char *breakBuffer = (char*)malloc(100 * sizeof(char));
+                                        if (!breakBuffer) {
+                                           printf("Memory allocation error\n");
+                                        }
+                                    
+                                        printf("\x1b[92m[!]\x1b[0m Address write data?\n");
+                                   
+                                        if  (!fgets(breakBuffer, 99, stdin)) {
+                                        printf("buffer to large\n");
+                                        return FALSE;
+                                        }
+
+                                        breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
+
+                                        // char to void*
+                                        void* targetAddress = (void*)strtoull(breakBuffer, NULL, 0);
+
+                                        BYTE bytes2Write[100];
+                                        puts("what Bytes to write??");
+                                        fgets(bytes2Write, 99, stdin);
+
+                                        bytes2Write[strcspn(bytes2Write, "\n")] = '\0';
+
+                                        size_t len = strlen(bytes2Write);
+                                        size_t byteCount = len / 2;
+
+                                        // Convert char to actual bytes so basically combining C 3 into C3 thats why / 2
+                                        for (size_t i = 0; i < byteCount; ++i) {
+                                            sscanf(&bytes2Write[i * 2], "%2hhx", &bytes2Write[i]);
+                                        }
+
+                                        writeMem(hProcess, targetAddress, bytes2Write, byteCount);
+                                    }
                                     
 
                                      } else {
@@ -2845,13 +2888,14 @@ int wmain(int argc, wchar_t* argv[]) {
         return 0;
     }
 
+
     LPVOID fiberMain = ConvertThreadToFiber(NULL); 
     LPVOID debugFiber = CreateFiber(0, debug, argv[1]);
 
     if (argc < 2) {
         //puts("\033[35mGlyph - Remote debugger engine by Sleepy\033[0m\n");
         logo();
-        puts("\x1b[92mUsage:\x1b[0m\n-c <Remote process name> ex. Notepad.exe (ATTACH)\n<path to executable> ex. C:\\Windows\\System32\\notepad.exe (START)\n-c <process> -b (BREAKPOINT)");
+        puts("\x1b[92mUsage:\x1b[0m\n-c <Remote process name> ex. Notepad.exe (ATTACH)\n<path to executable> ex. C:\\Windows\\System32\\notepad.exe start(START)\n-c <process> -b (BREAKPOINT)");
         puts("-l (LIST)");
         puts("-open <Path> (optional: -open <Path> -suspended)(start a process)");
         puts("-c <ProcName> -b (CC Breakpoint, must install a handler)");
@@ -2862,6 +2906,11 @@ int wmain(int argc, wchar_t* argv[]) {
 
         puts("run with -help for more help\n");
 
+        return 0;
+    }
+
+        if (wcscmp(argv[1], L"-l") == 0) {
+        listProcesses();
         return 0;
     }
 
@@ -2934,11 +2983,6 @@ int wmain(int argc, wchar_t* argv[]) {
             printf("Path to .so file\n");
         }
         elfWalk(argv[2]);
-        return 0;
-    }
-
-    if (wcscmp(argv[1], L"-l") == 0) {
-        listProcesses();
         return 0;
     }
 
