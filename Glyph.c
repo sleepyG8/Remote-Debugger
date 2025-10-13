@@ -327,6 +327,21 @@ typedef struct {
 Imports* imports = NULL;
 size_t countImport = 0;
 
+DWORD64 extract_offset_from_operand(const char* op_str) {
+
+    const char* plus = strstr(op_str, "+");
+    if (!plus) return 0;
+
+    const char* end = strchr(plus, ']');
+    if (!end) return 0;
+
+    char temp[32] = {0};
+    strncpy(temp, plus + 1, end - plus - 1);
+
+    return strtoull(temp, NULL, 0);
+    }
+
+
 BOOL disasm(uint8_t *code, int size, uint64_t address) {
     csh handle;
     cs_insn *insn;
@@ -343,19 +358,29 @@ BOOL disasm(uint8_t *code, int size, uint64_t address) {
     if (count > 0) {
         for (size_t i = 0; i < count; i++) {
 
-            for (int k=0; k < countImport; k++) {
-                                
-                //printf("%s\n", imports[k].name);
-
-                char addrStr[32];
-                sprintf(addrStr, "0x%"PRIx64, (uint64_t)imports[k].address);
-
-                                //Sleep(100);
+                for (int k=0; k < countImport; k++) {
 
                 //printf("%s - %s\n", insn[i].op_str, addrStr);
 
+                if (strstr(insn[i].op_str, "[rip +") != NULL) {
 
-                if (strstr(insn[i].op_str, addrStr) != NULL) {
+                    uint64_t rip = insn[i].address + insn[i].size;
+
+                    DWORD64 offset = extract_offset_from_operand(insn[i].op_str);
+
+                    //printf("offset %lu\n", offset);
+
+                    uint64_t finalAddress = rip + offset;
+                                
+                    //printf("%s\n", imports[k].name);
+
+                   // uint64_t addrStr[32];
+                   //sprintf(addrStr, "0x%"PRIx64, (uint64_t)imports[k].address);
+
+                    //printf("Final: %llX - %llX\n", finalAddress, (uint64_t)imports[k].address);
+
+                    if (finalAddress == (uint64_t)(uintptr_t)imports[k].address) {
+                    puts("Import Found\n");
                     printf("\x1b[32m%s ->\x1b[0m 0x%"PRIx64":\t%s\t%s\n", 
                     imports[k].name,
                     (uint64_t)imports[k].address,  
@@ -363,6 +388,26 @@ BOOL disasm(uint8_t *code, int size, uint64_t address) {
                     insn[i].op_str);
                     continue;
                 }
+            }
+
+                if (strncmp(insn[i].op_str, "0x", 2) == 0) {
+
+                DWORD64 final = strtoull(insn[i].op_str, NULL, 0);
+
+                //printf("Final: %llX - %llX\n", final, (uint64_t)imports[k].address);
+
+
+                if (final == (uint64_t)(uintptr_t)imports[k].address) {
+                    puts("Import Found\n");
+                    printf("\x1b[32m%s ->\x1b[0m 0x%"PRIx64":\t%s\t%s\n", 
+                    imports[k].name,
+                    (uint64_t)imports[k].address,  
+                    insn[i].mnemonic, 
+                    insn[i].op_str);
+                    continue;
+                }
+
+            }
 
             }
             printf("0x%"PRIx64":\t%s\t%s\n", insn[i].address, insn[i].mnemonic, insn[i].op_str, insn[i].bytes);
@@ -586,6 +631,8 @@ if (breakpointSet == 0) {
 printf("%s\n", (char*)importName);
 }
 
+//if (strcmp(importName, "OLEAUT32.dll") == 0) break;
+
 // use these for looping
 uintptr_t origThunkAddr = (uintptr_t)baseAddress + id.OriginalFirstThunk;
 uintptr_t thunkAddr     = (uintptr_t)baseAddress + id.FirstThunk;
@@ -620,7 +667,6 @@ while (TRUE) {
 
         if (!ReadProcessMemory(hProcess, (LPCVOID)((BYTE*)baseAddress + origThunk.u1.AddressOfData), &importByName, sizeof(IMAGE_IMPORT_BY_NAME), NULL)) {
             printf("error 3 %lu\n", GetLastError());
-            return 1;
             }
 
         if (importByName.Name != NULL) {
@@ -629,9 +675,8 @@ while (TRUE) {
 
         // read into larger buffer
         BYTE importBuffer[256] = {0};  // Enough to hold most function names
-        if (!ReadProcessMemory(hProcess, (LPCVOID)((BYTE*)baseAddress + origThunk.u1.AddressOfData), importBuffer, sizeof(importBuffer), NULL)) {
-        printf("error 3 %lu\n", GetLastError());
-        return 1;
+        if (!ReadProcessMemory(hProcess, (LPCVOID)((BYTE*)baseAddress + origThunk.u1.AddressOfData), &importBuffer, sizeof(importBuffer), NULL)) {
+        printf("error 4 %lu\n", GetLastError());
         }
 
         PIMAGE_IMPORT_BY_NAME importByName = (PIMAGE_IMPORT_BY_NAME)importBuffer;
@@ -946,7 +991,7 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread, DWOR
 
         // Patching Infinite loop bug on some Windows versions
         if (ldrEntry.DllBase == 0x0) break;
-        
+
         wprintf(L"\x1b[92m[+]\x1b[0m Module: %s\n", name);
         printf("\x1b[92m[+]\x1b[0m Base Address: 0x%llX\n", ldrEntry.DllBase);
         printf("+++++++++++++++++++++++++++++++++\n");
@@ -1397,6 +1442,15 @@ if (!ReadProcessMemory(hProcess, (BYTE*)peb.Base + sectionOffset + (i * sizeof(I
     }
     }
     printf("\n");
+
+    // Mining
+    if (section.Misc.VirtualSize > section.SizeOfRawData) {
+    DWORD codeCaveSize = section.Misc.VirtualSize - section.SizeOfRawData;
+    DWORD caveEntry = section.PointerToRawData + section.SizeOfRawData;
+
+    printf("Cave Found: %p - Size: %lu\n", (BYTE*)peb.Base + caveEntry, codeCaveSize);
+
+    }
     printf("++++++++++++++++++++++++++++++++++\n");
     }
     
