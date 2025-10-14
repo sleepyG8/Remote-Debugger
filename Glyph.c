@@ -327,6 +327,7 @@ typedef struct {
 Imports* imports = NULL;
 size_t countImport = 0;
 
+// checking for + and reading until and checking in between from capstone op_str
 DWORD64 extract_offset_from_operand(const char* op_str) {
 
     const char* plus = strstr(op_str, "+");
@@ -341,8 +342,8 @@ DWORD64 extract_offset_from_operand(const char* op_str) {
     return strtoull(temp, NULL, 0);
     }
 
-
-BOOL disasm(uint8_t *code, int size, uint64_t address) {
+// Capstone disasm
+BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address) {
     csh handle;
     cs_insn *insn;
     size_t count;
@@ -358,11 +359,13 @@ BOOL disasm(uint8_t *code, int size, uint64_t address) {
     if (count > 0) {
         for (size_t i = 0; i < count; i++) {
 
+                //int didntPrintf = 0;
                 for (int k=0; k < countImport; k++) {
 
                 //printf("%s - %s\n", insn[i].op_str, addrStr);
 
                 if (strstr(insn[i].op_str, "[rip +") != NULL) {
+
 
                     uint64_t rip = insn[i].address + insn[i].size;
 
@@ -371,16 +374,23 @@ BOOL disasm(uint8_t *code, int size, uint64_t address) {
                     //printf("offset %lu\n", offset);
 
                     uint64_t finalAddress = rip + offset;
-                                
-                    //printf("%s\n", imports[k].name);
+                            
+                    uint64_t finalComputedAddress = 0;
+                    if (!ReadProcessMemory(hProcess, finalAddress, &finalComputedAddress, 8, NULL)) {
+                        printf("Error reading %lu\n", GetLastError());
+                    }
+                    
+                   // if (didntPrintf == 0 && finalComputedAddress != 0) {
+                     //   printf("\x1b[32mFunction Address:\x1b[0m %llX\n", finalComputedAddress);
+                       // didntPrintf = 1;
+                    //}
 
                    // uint64_t addrStr[32];
                    //sprintf(addrStr, "0x%"PRIx64, (uint64_t)imports[k].address);
 
                     //printf("Final: %llX - %llX\n", finalAddress, (uint64_t)imports[k].address);
 
-                    if (finalAddress == (uint64_t)(uintptr_t)imports[k].address) {
-                    puts("Import Found\n");
+                    if (finalComputedAddress == (uint64_t)(uintptr_t)imports[k].address) {
                     printf("\x1b[32m%s ->\x1b[0m 0x%"PRIx64":\t%s\t%s\n", 
                     imports[k].name,
                     (uint64_t)imports[k].address,  
@@ -410,8 +420,10 @@ BOOL disasm(uint8_t *code, int size, uint64_t address) {
             }
 
             }
+
             printf("0x%"PRIx64":\t%s\t%s\n", insn[i].address, insn[i].mnemonic, insn[i].op_str, insn[i].bytes);
         }
+
         cs_free(insn, count);
     } else {
         printf("Failed to disassemble\n");
@@ -534,9 +546,8 @@ void addImport(char* funcName, FARPROC addr) {
     countImport++;
 }
 
-
-
 int breakpointSet = 0;
+// Reading Imported Apis
 int getRemoteImports(HANDLE hProcess, char* breakFunction, BOOL entry) {
 
 printf("+++++++++++++++++++++++++++++++++++++++++++\n");
@@ -738,24 +749,19 @@ BOOL logo() {
         printf("\x1B[37;44m");
         printf("Debugger By Sleepy:\n                            v1.1.1\n");
     
-        
-    
-    
         printf("\x1B[4;1H");
-        //char *buff = "+";
+
         for (int i = 0; i < 100; i++) {
             printf("+");
         }
         
-        
-       // printf("\x1B[6;10Hprocesses:\n\n");
-
         puts("\n");
         printf("\x1B[0m");
         
         return 0;
     }
 
+// Reading Raw address and parsing the data
 BOOL readRawAddr(HANDLE hProcess, LPVOID base, SIZE_T bytesToRead) {
 
     BYTE *buff = (BYTE*)malloc(bytesToRead);
@@ -804,11 +810,12 @@ BOOL readRawAddr(HANDLE hProcess, LPVOID base, SIZE_T bytesToRead) {
     // capstone
     puts("\n------\x1b[92m[+]Dissassembly:\x1b[0m------");
 
-    disasm(buff, bytesToRead, base);
+    disasm(hProcess, buff, bytesToRead, base);
     //free(buff); // Free allocated memory
     return TRUE;
 }
 
+// Getting Context of the desired thread ID
 BOOL getThreads(DWORD *threadId) {
     HANDLE hThread;
 
@@ -873,6 +880,7 @@ BOOL getThreads(DWORD *threadId) {
 PVOID ntdllBase;
 MYPEB pbi;
 WCHAR dllName[MAX_PATH] = {0};
+// Peb :)
 BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread, DWORD id) {
     SuspendThread(thread);
     HMODULE hNtDll = GetModuleHandle("ntdll.dll");
@@ -1003,6 +1011,7 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread, DWOR
     
     }
 
+// Getting the security descriptor of a provided handle
 BOOL GetSecurityDescriptor(HANDLE hObject) {
     HMODULE hAdvapi32 = LoadLibrary("Advapi32.dll");
 if (!hAdvapi32) {
@@ -1120,7 +1129,7 @@ FreeLibrary(hNtDll);
 }
 
 #define STATUS_INFO_LENGTH_MISMATCH ((NTSTATUS)0xC0000004)
-
+// Listing all processes
 BOOL listProcesses() {
           HMODULE hNtDll = GetModuleHandle("ntdll.dll");
     if (!hNtDll) {
@@ -1186,6 +1195,7 @@ while(info) {
     return TRUE;
 }
 
+// Getting CPU count and info
 BOOL Getcpuinfo() {
 
           HMODULE hNtDll = GetModuleHandle("ntdll.dll");
@@ -1302,16 +1312,19 @@ if (!NT_SUCCESS(status)) {
 
 }
 
+// hardware breakpoint
 BOOL breakpoint(DWORD threadId, PVOID address, HANDLE hProcess) {
+
+    printf("Address: %p\n", address);
     CONTEXT contextBreak;
     HANDLE hThread;
  
     hThread = OpenThread(THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME | THREAD_QUERY_INFORMATION | PROCESS_SUSPEND_RESUME, FALSE, threadId);
     if (hThread == NULL) {
-        printf("Error: Unable to open thread.\n");
+        printf("Error: Unable to open thread. %lu\n", GetLastError());
         return TRUE;
     }
-
+/*
     HMODULE hNtdll = GetModuleHandle("ntdll.dll");
 
     typedef NTSTATUS (NTAPI *pNtProtectVirtualMemory)(
@@ -1348,10 +1361,21 @@ if (status == STATUS_ACCESS_VIOLATION) {
     printf("exit code: %lu\n", exitCode);
     }
 
+*/
+
+   if (SuspendThread(hThread) == -1) {
+    printf("failed to suspend %lu\n", GetLastError());
+    return FALSE;
+   }
+    
+    // Helps with getting context maybe? idk you can remove probably
+    Sleep(1000);
+
     contextBreak.ContextFlags = CONTEXT_FULL | CONTEXT_AMD64;
     //setting conetext can help avoid detection
     if (GetThreadContext(hThread, &contextBreak)) {
-        contextBreak.Dr1 = address;
+        
+        contextBreak.Dr1 = (DWORD64)(uintptr_t)address;
         contextBreak.Dr7 |= (1 << 2);  // Enable DR1
         contextBreak.Dr7 |= (3 << 20); // Break on execution
         contextBreak.Dr7 |= (0 << 22); // 1-byte breakpoint
@@ -1362,6 +1386,7 @@ if (status == STATUS_ACCESS_VIOLATION) {
         printf("RBX: 0x%016llX\n", contextBreak.Rbx);
         printf("RCX: 0x%016llX\n", contextBreak.Rcx);
         printf("RDX: 0x%016llX\n", contextBreak.Rdx);
+        printf("DR1: 0x%016llX\n", contextBreak.Dr1);
 
     } else {
         printf("Error: Unable to get thread context. %lu\n", GetLastError());
@@ -2616,7 +2641,10 @@ BOOL WINAPI debug(LPCVOID param) {
                                     }
 
                                     breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
-                                    if (!breakpoint( pi.dwThreadId , breakBuffer, hProcess)) {
+
+                                    DWORD64 address = strtoull(breakBuffer, NULL, 0);
+
+                                    if (!breakpoint( pi.dwThreadId , address, hProcess)) {
                                         printf("failed to set breakpoint, protected memory region.\n");
                                     }
 
