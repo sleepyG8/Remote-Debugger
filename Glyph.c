@@ -327,6 +327,33 @@ typedef struct {
 Imports* imports = NULL;
 size_t countImport = 0;
 
+int Score; // Globally Function tracking
+BOOL MalCheck(char* funcName) {
+
+if (strcmp(funcName, "VirtualAlloc") == 0) {
+Score += 30;
+}
+
+else if (strcmp(funcName, "WriteProcessMemory") == 0) {
+Score += 30;
+}
+
+if (strcmp(funcName, "VirtualAllocEx") == 0) {
+Score += 30;
+}
+
+else if (strcmp(funcName, "CreateRemoteThread") == 0) {
+Score += 50;
+}
+
+else if (strcmp(funcName, "CreateRemoteThreadEx") == 0) {
+Score += 50;
+}
+
+return TRUE;
+}
+
+
 // checking for + and reading until and checking in between from capstone op_str
 DWORD64 extract_offset_from_operand(const char* op_str) {
 
@@ -391,12 +418,18 @@ BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address) {
                     //printf("Final: %llX - %llX\n", finalAddress, (uint64_t)imports[k].address);
 
                     if (finalComputedAddress == (uint64_t)(uintptr_t)imports[k].address) {
-                    printf("\x1b[32m%s ->\x1b[0m 0x%"PRIx64":\t%s\t%s\n", 
-                    imports[k].name,
-                    (uint64_t)imports[k].address,  
-                    insn[i].mnemonic, 
-                    insn[i].op_str);
-                    continue;
+                    
+                        printf("\x1b[32m%s ->\x1b[0m 0x%"PRIx64":\t%s\t%s\n", imports[k].name, (uint64_t)imports[k].address, insn[i].mnemonic, insn[i].op_str);
+                    
+                        // Checking function names and giving a global Score
+                        MalCheck(imports[k].name);
+
+                        if (Score > 60) {
+                            printf("Malicous File found!");
+                            getchar();
+                        }
+
+                        continue;
                 }
             }
 
@@ -422,6 +455,10 @@ BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address) {
             }
 
             printf("0x%"PRIx64":\t%s\t%s\n", insn[i].address, insn[i].mnemonic, insn[i].op_str, insn[i].bytes);
+
+            if (i == count) {
+                printf("[END]");
+            }
         }
 
         cs_free(insn, count);
