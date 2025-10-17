@@ -4,6 +4,10 @@
 
 `!reg`       - Print process registers
 
+`!cc`        - int3 break at function - must set up breakpoint handler
+
+`!ccraw`     - int3 break at address - must set up breakpoint handler
+
 `!getreg`    - Print registers at current memory location
 
 `!break`     - Set a breakpoint and read registers
@@ -52,6 +56,8 @@
 
 `!handles`   - Dump Handles
 
+`!dll`       - List loaded modules
+
 ## -- General Commands --
 
 `clear`      - Clear the console screen
@@ -65,6 +71,8 @@
 `!ext`       - Load extension (DLL)
 
 `docs`       - Go to documentation online
+
+`start clip` - Start clipboard shortcut
 
 ============================================
 
