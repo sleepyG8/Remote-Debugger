@@ -1,4 +1,4 @@
-# ===== Remote-Debugger Command Reference =====
+# Glyph Commands
 
 ## -- Registers & Breakpoints --
 
