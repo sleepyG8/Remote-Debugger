@@ -102,7 +102,13 @@ Theres much more to come!
 
 If you are interested in testing the full version, reach out on Discord in my server.
 
+============================================
 
-                                   
+Disasm:
+
+If you wish to trace functions in the disasm use !imports first to populate the table.
+
+use !dump with an address and how many bytes to read to get the valid chars, raw hex, 
+entropy rating (optional), and finally a full disasm at the address.
 
                                 
