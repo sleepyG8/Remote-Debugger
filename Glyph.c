@@ -324,6 +324,11 @@ typedef struct {
     FARPROC address;
 } Imports;
 
+typedef struct {
+    wchar_t modName[256];
+    FARPROC modAddress;
+} Dlls;
+
 Imports* imports = NULL;
 size_t countImport = 0;
 
@@ -564,7 +569,7 @@ BYTE* VAFromRVA(DWORD rva, PIMAGE_NT_HEADERS nt, BYTE* base) {
 
 
 size_t capacity = 0;
-// making Dynamic struct
+// making Dynamic struct for imports
 void addImport(char* funcName, FARPROC addr) {
     if (countImport >= capacity) {
         capacity = (capacity == 0) ? 4 : capacity * 2;
@@ -581,6 +586,52 @@ void addImport(char* funcName, FARPROC addr) {
 
     imports[countImport].address = addr;
     countImport++;
+}
+
+size_t modCapacity = 0;
+Dlls* modules;
+size_t countModules = 0;
+// making Dynamic struct for Modules
+void addModule(wchar_t* funcName, FARPROC addr) {
+
+    if (!funcName) return;
+
+    if (countModules >= modCapacity) {
+        modCapacity = (modCapacity == 0) ? 4 : modCapacity * 2;
+        modules = realloc(modules, modCapacity * sizeof(Dlls));
+        if (!modules) {
+            printf("Memory allocation failed\n");
+            exit(1);
+        }
+    }
+
+    // copying funcName buffer into the global modules struct, see line 327
+    wcscpy_s(modules[countModules].modName, 256, funcName);
+
+    // Setting address
+    modules[countModules].modAddress = addr;
+
+    countModules++;
+}
+
+BOOL listModules() {
+    for (int i=0; i < countModules; i++) {
+
+        if (i == 0) {
+            wprintf(L"\x1b[92m[+]\x1b[0m Base Address: %s\n", modules[i].modName);
+        } else {
+            wprintf(L"\x1b[92m[+]\x1b[0m Module %lu: %s\n", i, modules[i].modName);
+            printf("\x1b[92m[+]\x1b[0m Address: 0x%llX\n", modules[i].modAddress);
+        }
+
+        if (i == countModules) {
+            puts("[END]");
+        }
+
+        printf("+++++++++++++++++++++++++++++++++\n");
+
+    }
+    return TRUE;
 }
 
 int breakpointSet = 0;
@@ -1005,7 +1056,7 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread, DWOR
     
         printf("\x1b[92m[+]\x1b[0m LDR Address: 0x%llX\n", ldrData);
 
-        printf("\n\033[35m+-----------Modules-----------+\033[0m\n");
+       // printf("\n\033[35m+-----------Modules-----------+\033[0m\n");
      LIST_ENTRY* head = &ldrData.InLoadOrderModuleList;
      LIST_ENTRY* currentEntry = head->Flink;
     
@@ -1013,13 +1064,13 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread, DWOR
         DWORD bytes;
         MY_LDR_DATA_TABLE_ENTRY ldrEntry = {0};
         if (!ReadProcessMemory(hProcess, currentEntry, &ldrEntry, sizeof(MY_LDR_DATA_TABLE_ENTRY), &bytes)) {
-            printf("\x1b[92m[!]\x1b[0m Done\n");
+            //printf("\x1b[92m[!]\x1b[0m Done\n");
             return FALSE;
         }
 
         WCHAR name[MAX_PATH] = {0};
         if (!ReadProcessMemory(hProcess, ldrEntry.FullDllName.Buffer, &name, ldrEntry.FullDllName.Length, NULL)) {
-            printf("\x1b[92m[!]\x1b[0m Done\n");
+            //printf("\x1b[92m[!]\x1b[0m Done\n");
             return FALSE;
         }
 
@@ -1037,9 +1088,11 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread, DWOR
         // Patching Infinite loop bug on some Windows versions
         if (ldrEntry.DllBase == 0x0) break;
 
-        wprintf(L"\x1b[92m[+]\x1b[0m Module: %s\n", name);
-        printf("\x1b[92m[+]\x1b[0m Base Address: 0x%llX\n", ldrEntry.DllBase);
-        printf("+++++++++++++++++++++++++++++++++\n");
+        //wprintf(L"\x1b[92m[+]\x1b[0m Module: %s\n", name);
+        //printf("\x1b[92m[+]\x1b[0m Base Address: 0x%llX\n", ldrEntry.DllBase);
+
+        // Adding to a struct
+        addModule(name, ldrEntry.DllBase);
         
         currentEntry = ldrEntry.InLoadOrderLinks.Flink;
        
@@ -2160,6 +2213,8 @@ BOOL printHelp() {
     
     printf("!handles  - Dump Handles\n");
 
+    printf("!dll       - List all loaded modules\n");
+
     printf("\n-- General Commands --\n");
     
     printf("clear      - Clear the console screen\n");
@@ -2468,7 +2523,7 @@ BOOL WINAPI debug(LPCVOID param) {
                     &si,
                     &pi)) {
 
-        printf("\x1b[92m[+]\x1b[0m \033[35mDebugging %s:\033[0m\n", arg);
+        wprintf(L"\x1b[92m[+]\x1b[0m \033[35mDebugging %ws:\033[0m\n", arg);
 
             } else {
                 puts("Wrong path...");
@@ -2484,18 +2539,23 @@ BOOL WINAPI debug(LPCVOID param) {
         if (!hProcess) {
             printf("Problem starting the debugger\n");
         } else {
-            DWORD *threadId = pi.dwThreadId;
+
+            DWORD threadId = pi.dwThreadId;
+            
             if (threadId == NULL) {
                 printf("Error getting the thread ID...\n");
                 return FALSE;
             } 
        
+            // Dumping Registers
             getThreads(threadId);
 
+            // Getting PEB / Startup info
             GetPEBFromAnotherProcess(hProcess, pi.dwThreadId, pi.dwProcessId);
 
-            printf("thread address/ID: %p\n", &threadId);
+            printf("\x1b[92m[+]\x1b[0m Thread address/ID: %lu\n", threadId);
 
+            // if -b is found set a breakpoint on that import (breakBuff)
             if (breakpointSet) {
                 getRemoteImports(hProcess, breakBuff, 0);
             }
@@ -2989,6 +3049,10 @@ BOOL WINAPI debug(LPCVOID param) {
                                         }
 
                                         writeMem(hProcess, targetAddress, bytes2Write, byteCount);
+                                    }
+
+                                    else if (strcmp(buff, "!dll") == 0) {
+                                        listModules();
                                     }
                                     
 
