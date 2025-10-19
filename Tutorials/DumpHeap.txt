@@ -1,0 +1,51 @@
+DUMPING HEAPS
+==============
+
+Commands Needed: !Inject, !dump
+
+You may be in a position in which you
+want to find out which memory allocations
+a program makes. 
+
+There is 2 different ways to do this. Using
+the STACK or dumping the HEAP.
+
+This tutorial will cover heaps and how you 
+can use my heapdump DLL to discover in 
+memory allocation and dump there address 
+in the debugger.
+
+To start out, reading heaps requires that 
+you are inside of the remote process, it 
+is not possible to dump heaps from outside 
+of the process, so this requires injection.
+
+I have not YET provided the Injector becuase
+I challenge you to write your own as an 
+extention, but in the future I will provide
+one very soon!
+
+Using the -Inject command you can approve the 
+safety check and make sure you have approval
+to even inject. Next, it will ask you for a 
+process number to Inject. Then finally a path
+to a dll on disk to Inject, provide a full path.
+
+The DLL I made to dump heaps is HeapRead.dll. Go
+ahead and inject it into notepad.exe for example
+and view the results in a console window!
+
+There will be a lot a heaps with the size of 1
+page (4096 bytes). I suggest starting with large
+allocations and working down to some guesswork, 
+using the !dump command remotely form the debugger
+to dump the memory region. 
+
+Cool tip: If the allocated region contains 
+executable code, the dumper will disasm it and 
+allow you to find suspicous blobs in memory and 
+extract shellcode and maybe a key too! look for 
+another region of a similar size to find the key.
+
+
+
