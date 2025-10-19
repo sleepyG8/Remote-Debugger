@@ -374,6 +374,68 @@ DWORD64 extract_offset_from_operand(const char* op_str) {
     return strtoull(temp, NULL, 0);
     }
 
+
+BYTE* makeMem(int size) {
+
+    BYTE* remoteMem = VirtualAlloc(NULL, size, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+
+    return remoteMem;
+}
+
+int allocStdin(BYTE* remoteMem, int startingOffset, FILE* data) {
+
+    // Cannot overun because 100 input can never overrun the 200 safety gap
+    if (startingOffset + 200 >= 0x2000) {
+        printf("Buffer is getting full, free is coming soon, restart the app...\n");
+    }
+
+    int i = 0;
+    int ch;
+
+    while ((ch = fgetc(data)) != EOF && ch != '\n' && i < 100) {
+        // Safety check
+        if ((startingOffset + i) < 0x2000) {
+        remoteMem[startingOffset + i] = (BYTE)ch;
+        }
+        i++;
+    }
+
+    int sizeOfData = i;
+
+    // storing offset of data
+    uintptr_t offset = (uintptr_t)remoteMem[startingOffset + i];
+
+    for (int j = 0; j < 100; j++) {
+    remoteMem[startingOffset + sizeOfData + j] = 0x00;
+    }
+
+    //printf("Offset: %llx\n", startingOffset + sizeOfData);
+
+    return startingOffset + sizeOfData + 100;
+
+}
+
+BYTE* readAlloc(BYTE* remoteMem, int startingOffset) {
+
+    BYTE* temp = malloc(100);
+    int i;
+    for (i=0; i < 100; i++) {
+
+        if (remoteMem[startingOffset + i] == 0x00) break;
+
+        temp[i] = remoteMem[startingOffset + i];
+
+        //printf("%02X ", temp[i]);
+
+    }
+
+    temp[i] = 0x00;
+
+    return temp;
+
+
+}
+
 // Capstone disasm
 BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address) {
     csh handle;
@@ -870,13 +932,15 @@ BOOL readRawAddr(HANDLE hProcess, LPVOID base, SIZE_T bytesToRead) {
     for (SIZE_T i = 0; i < bytesRead; i++) {
         if (isprint(buff[i])) {  // Very useful to print only valid chars
         printf("%c ", buff[i]);;
+        //if ((i +1) % 12 == 0) printf("\n");
     }
 }
     printf("\n");
 
     printf("\x1b[92m[+]\x1b[0m Raw: \n");
     for (SIZE_T i = 0; i < bytesRead; i++) {
-    printf("%02X ", buff[i]);        
+    printf("%02X ", buff[i]);   
+    if ((i +1) % 12 == 0) printf("\n");     
     }
     
     printf("\n");
@@ -2486,6 +2550,9 @@ char *breakBuff;
 BOOL clipSniper = 0;
 BOOL clipRan = 0;
 
+BYTE* AllocatedRegion;
+int offsetHandles; // first allocation offset
+int offsetDump; // current do + 100
 BOOL WINAPI debug(LPCVOID param) {
 
     wchar_t *arg = (wchar_t*)param;
@@ -2579,11 +2646,14 @@ BOOL WINAPI debug(LPCVOID param) {
                             }
     
                             
-                            char buff[50];
                             printf("\033[35mDebug>>\033[0m");
-                                            
-                            fgets(buff, 49, stdin);
-                            size_t sizeBuff = sizeof(buff);
+
+                            // Custom memory allocator
+                            allocStdin(AllocatedRegion, offsetHandles + 200, stdin);
+
+                            // Reading from allocated region
+                            char* buff = (char*)readAlloc(AllocatedRegion, offsetHandles + 200);
+                            
                             buff[strcspn(buff, "\n")] = '\0';
                             
                             if (buff != NULL) {
@@ -2762,17 +2832,13 @@ BOOL WINAPI debug(LPCVOID param) {
                                     }
                                 // Dump raw bytes by address
                                     else if (strcmp(buff, "!dump") == 0) {
-                                        char breakBuffer[100] = {0};
-                                        if (!breakBuffer) {
-                                        printf("Memory allocation error\n");
-                                        }
-
+                            
                                         printf("Which addr to get?\n");
 
-                                        if (!fgets(breakBuffer, 99, stdin)) {
-                                         printf("buffer to large\n");
-                                        }
+                                        offsetDump = allocStdin(AllocatedRegion, offsetHandles + 100, stdin);
 
+                                        BYTE* breakBuffer = readAlloc(AllocatedRegion, offsetHandles + 100);
+                                        
                                         breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
 
                                         // Had to add for correct formating
@@ -2945,18 +3011,12 @@ BOOL WINAPI debug(LPCVOID param) {
                                     }
 
                                     else if (strcmp(buff, "!handles") == 0) {
-
-                                        char *breakBuffer = (char*)malloc(100 * sizeof(char));
-                                        if (!breakBuffer) {
-                                           printf("Memory allocation error\n");
-                                        }
                                     
                                         printf("\x1b[92m[-]\x1b[0m Proccess Number? - Enter for current process\n");
                                    
-                                        if  (!fgets(breakBuffer, 99, stdin)) {
-                                        printf("buffer to large\n");
-                                        return FALSE;
-                                        }
+                                        offsetHandles = allocStdin(AllocatedRegion, 0, stdin);
+
+                                        BYTE* breakBuffer = readAlloc(AllocatedRegion, 0);
 
                                         breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
 
@@ -3074,6 +3134,8 @@ int wmain(int argc, wchar_t* argv[]) {
         puts("No debugging the debugger");
         return 0;
     }
+
+    AllocatedRegion = makeMem(0x2000);
 
 
     LPVOID fiberMain = ConvertThreadToFiber(NULL); 
