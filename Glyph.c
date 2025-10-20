@@ -332,32 +332,44 @@ typedef struct {
 Imports* imports = NULL;
 size_t countImport = 0;
 
+// Helpers
+int mystrcmp(char* one, char* two) {
+
+    for (int i=0; i < 256; i++) {
+        
+        if (one[i] != two[i]) return 1;
+        if (one[i] == '\0' || two[i] == '\0') return 0;
+
+    }
+    return 0;
+}
+
+
 int Score; // Globally Function tracking
 BOOL MalCheck(char* funcName) {
 
-if (strcmp(funcName, "VirtualAlloc") == 0) {
+if (mystrcmp(funcName, "VirtualAlloc") == 0) {
 Score += 30;
 }
 
-else if (strcmp(funcName, "WriteProcessMemory") == 0) {
+else if (mystrcmp(funcName, "WriteProcessMemory") == 0) {
 Score += 30;
 }
 
-if (strcmp(funcName, "VirtualAllocEx") == 0) {
+if (mystrcmp(funcName, "VirtualAllocEx") == 0) {
 Score += 30;
 }
 
-else if (strcmp(funcName, "CreateRemoteThread") == 0) {
+else if (mystrcmp(funcName, "CreateRemoteThread") == 0) {
 Score += 50;
 }
 
-else if (strcmp(funcName, "CreateRemoteThreadEx") == 0) {
+else if (mystrcmp(funcName, "CreateRemoteThreadEx") == 0) {
 Score += 50;
 }
 
 return TRUE;
 }
-
 
 // checking for + and reading until and checking in between from capstone op_str
 DWORD64 extract_offset_from_operand(const char* op_str) {
@@ -380,6 +392,29 @@ BYTE* makeMem(int size) {
     BYTE* remoteMem = VirtualAlloc(NULL, size, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 
     return remoteMem;
+}
+
+uintptr_t alloc(BYTE* remoteMem, int startingOffset, unsigned char* data) {
+
+
+    int sizeOfData = strlen(data);
+
+    int i;
+    for (i=0; i < sizeOfData; i++) {
+        remoteMem[startingOffset + i] = data[i];
+    }
+
+    // storing offset of data
+    uintptr_t offset = (uintptr_t)remoteMem[startingOffset + i];
+
+    for (int j = 0; j < 100; j++) {
+    remoteMem[startingOffset + sizeOfData + j] = 0x00;
+    }
+
+    //printf("Offset: %llx\n", startingOffset + sizeOfData);
+
+    return offset + 100;
+
 }
 
 int allocStdin(BYTE* remoteMem, int startingOffset, FILE* data) {
@@ -436,6 +471,10 @@ BYTE* readAlloc(BYTE* remoteMem, int startingOffset) {
 
 }
 
+// Using bump allocator cmd line, imports, handles
+BYTE* AllocatedRegion;
+int offsetHandles; // first allocation offset
+int offsetDump; // current do + 100
 // Capstone disasm
 BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address) {
     csh handle;
@@ -483,6 +522,32 @@ BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address) {
                    //sprintf(addrStr, "0x%"PRIx64, (uint64_t)imports[k].address);
 
                     //printf("Final: %llX - %llX\n", finalAddress, (uint64_t)imports[k].address);
+                    // int currentOffset = k * 100;
+                    // BYTE* import = readAlloc(AllocatedRegion, 300 + currentOffset);
+
+                    // //printf("FOUND: %s\n", (char*)import);
+
+                    // char* result = malloc(100);
+                    // if (!result) return NULL;
+                    // int i = 0;
+
+                    // while (import[i] != '-' && import[i] != '\0' && i < 100) {
+                    //     i++; // skip until we find '-'
+                    // }
+
+                    // if (import[i] == '-') {
+                    //     i++; // skip the '-' itself
+                    // }
+
+                    // int j = 0;
+                    // while (import[i] != '\0' && j < 99) {
+                    //     result[j++] = import[i++];
+                    // }
+                    // result[j] = '\0';
+
+                    // uint64_t addr = *(uint64_t*)result;
+
+                    //printf("%s\n", result);
 
                     if (finalComputedAddress == (uint64_t)(uintptr_t)imports[k].address) {
                     
@@ -696,6 +761,31 @@ BOOL listModules() {
     return TRUE;
 }
 
+// BOOL listImports() {
+
+//     for (int i=0; i < 3000; i++) {
+//         printf("%02X ", (unsigned char)AllocatedRegion[i]);
+//     }
+
+//     return 0;
+
+//     if (countImport == 0) {
+//         printf("You must run !imports first!\n");
+//         return 0;
+//     }
+
+//     for (int i=0; i < countImport; i++) {
+//     int currentOffset = i * 100;
+//     BYTE* import = readAlloc(AllocatedRegion, 300 + currentOffset);
+//     if (!import) continue;
+//     import[strcspn(import, "\n")] = '\0';
+//     printf("%s\n", import);
+//     }
+
+//     printf("num of imports: %lu\n", countImport);
+    
+//     return 0;
+// }
 int breakpointSet = 0;
 // Reading Imported Apis
 int getRemoteImports(HANDLE hProcess, char* breakFunction, BOOL entry) {
@@ -792,7 +882,7 @@ if (breakpointSet == 0) {
 printf("%s\n", (char*)importName);
 }
 
-//if (strcmp(importName, "OLEAUT32.dll") == 0) break;
+//if (mystrcmp(importName, "OLEAUT32.dll") == 0) break;
 
 // use these for looping
 uintptr_t origThunkAddr = (uintptr_t)baseAddress + id.OriginalFirstThunk;
@@ -813,7 +903,7 @@ if (!ReadProcessMemory(hProcess, (LPVOID)((BYTE*)thunkAddr), &thunkData, sizeof(
     return 1;
 }
 ///////////////////////////////////////////
-
+int i = 0;
 while (TRUE) {
         
         // read orig and thunk addr in the loop again to stop infinite loop
@@ -848,6 +938,14 @@ while (TRUE) {
         }
 
         addImport(importByName->Name, funcAddr);
+
+        // current num * 100
+        int currentOffset = i * 100;
+
+        // Storing into custom allocated buffer
+        const char buff[150];
+        snprintf(buff, 149, "%s-%p", importByName->Name, (void*)funcAddr);
+        alloc(AllocatedRegion, offsetHandles + 300 + currentOffset, buff);
         
         BYTE hookedBytes[5];
         ReadProcessMemory(hProcess, funcAddr, &hookedBytes, sizeof(hookedBytes), NULL);
@@ -862,7 +960,7 @@ while (TRUE) {
         BYTE patch[10];
         memset(patch, 0xCC, sizeof(patch));
 
-        if (breakFunction != NULL && strcmp(importByName->Name, breakFunction) == 0) {
+        if (breakFunction != NULL && mystrcmp(importByName->Name, breakFunction) == 0) {
             if (!WriteProcessMemory(hProcess, funcAddr, &patch, sizeof(patch), NULL)) {
                 printf("error\n");
                 return 0;
@@ -878,7 +976,7 @@ while (TRUE) {
         
         origThunkAddr += sizeof(IMAGE_THUNK_DATA);
         thunkAddr     += sizeof(IMAGE_THUNK_DATA);
-            
+        i++;
         }
     
 if (breakpointSet == 0) {
@@ -2317,7 +2415,7 @@ unsigned char* clipBoard() {
   
             //printf("%s and %s\n", LastData, clipData);
   
-            if (LastData == NULL || strcmp(LastData, clipData) != 0) {
+            if (LastData == NULL || mystrcmp(LastData, clipData) != 0) {
                 //printf("Its diff Lastdata %s\n", LastData);
                 samedata = FALSE;
              } else {
@@ -2357,7 +2455,7 @@ while (1) {
             continue;
         }
 
-        if (strcmp(clipData, "nope") == 0) {
+        if (mystrcmp(clipData, "nope") == 0) {
             CloseClipboard();
             continue;
         };
@@ -2495,7 +2593,7 @@ if (!ReadProcessMemory(hProcess, (BYTE*)ntdllBase + sectionOffset + (i * sizeof(
     printf("Error reading section memory %lu", GetLastError());
     }
 
-    if (strcmp(section.Name, ".data") == 0) {
+    if (mystrcmp(section.Name, ".data") == 0) {
     printf("\x1b[92m[+]\x1b[0m %s\n", (char*)section.Name);
 
     BYTE* address = (BYTE*)ntdllBase + section.VirtualAddress;
@@ -2550,9 +2648,6 @@ char *breakBuff;
 BOOL clipSniper = 0;
 BOOL clipRan = 0;
 
-BYTE* AllocatedRegion;
-int offsetHandles; // first allocation offset
-int offsetDump; // current do + 100
 BOOL WINAPI debug(LPCVOID param) {
 
     wchar_t *arg = (wchar_t*)param;
@@ -2628,7 +2723,7 @@ BOOL WINAPI debug(LPCVOID param) {
             }
 
             ////////////////////////////////////////////////////////////////////
-            // Each strcmp() is a feature, go down the list                   //
+            // Each mystrcmp() is a feature, go down the list                   //
             ////////////////////////////////////////////////////////////////////
 
                     while (1) {   
@@ -2658,7 +2753,7 @@ BOOL WINAPI debug(LPCVOID param) {
                             
                             if (buff != NULL) {
                                         
-                            if (strcmp(buff, "!reg") == 0) {
+                            if (mystrcmp(buff, "!reg") == 0) {
                                printf("Process ID: %lu\n", pi.dwProcessId);
                                printf("Thread ID: %lu\n", pi.dwThreadId);
                                printf("RIP: 0x%016llX\n", context.Rip);
@@ -2668,7 +2763,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                printf("RDX: 0x%016llX\n", context.Rdx);
                             }
                             
-                           else if (strcmp(buff, "!attr") == 0) {
+                           else if (mystrcmp(buff, "!attr") == 0) {
 
                             //geting object info
                             typedef NTSTATUS (NTAPI *pNtQueryObject)(HANDLE, OBJECT_INFORMATION_CLASS, PVOID, ULONG, PULONG);
@@ -2691,12 +2786,12 @@ BOOL WINAPI debug(LPCVOID param) {
                                 FreeLibrary(hNtDll);     
                                 } 
 
-                                else if (strcmp(buff,"!peb") == 0) {
+                                else if (mystrcmp(buff,"!peb") == 0) {
                                     printf("\x1b[92m[+]\x1b[0m peb already retrieved\n");
                                     printf("\x1b[92m[+]\x1b[0m Peb address: 0x%p\n", peb.pebaddr);
                                 }
 
-                                else if (strcmp(buff, "exit") == 0) {
+                                else if (mystrcmp(buff, "exit") == 0) {
                                         pNtTerminateProcess NtTerminateProcess = (pNtTerminateProcess)GetProcAddress(GetModuleHandle("ntdll.dll"), "NtTerminateProcess");
                                        if (!NtTerminateProcess) return FALSE;
                                        NTSTATUS status = NtTerminateProcess(NULL, 0);
@@ -2710,7 +2805,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                        NtTerminateProcess(NULL, 0);    
                                 }
 
-                                else if (strcmp(buff, "!params") == 0) {
+                                else if (mystrcmp(buff, "!params") == 0) {
                                    
                                     if (peb.BeingDebugged == 0) {
                                         printf("debugged?: No\n");
@@ -2719,23 +2814,23 @@ BOOL WINAPI debug(LPCVOID param) {
                                     wprintf(L"\x1b[92m[+]\x1b[0m Path: %ls\n", imagePath);
                                 }
 
-                                else if (strcmp(buff, "clear") == 0) {
+                                else if (mystrcmp(buff, "clear") == 0) {
                                     printf("\x1B[2J");                             
                                    }
 /////////-HELP-/////////
-                                else if (strcmp(buff, "help") == 0) {
+                                else if (mystrcmp(buff, "help") == 0) {
 
                                     printHelp();
 
                                 }
 
-                                else if (strcmp(buff, "!proc") == 0) {
+                                else if (mystrcmp(buff, "!proc") == 0) {
                                     printf("\x1b[92m[+]\x1b[0m Listing system wide process information:\n");
                                     listProcesses();
                                 }
 
                                 // bit stuff
-                                else if (strcmp(buff, "!bit") == 0) {
+                                else if (mystrcmp(buff, "!bit") == 0) {
                                         printf("\x1b[92m[+]\x1b[0m Is Protected Process?: %lu\n", pbi.IsProtectedProcess);
                                         printf("\x1b[92m[+]\x1b[0m Is PPL?: %lu\n", pbi.IsProtectedProcessLight);
                                         printf("\x1b[92m[+]\x1b[0m Uses Large Pages?: %lu\n", pbi.ImageUsesLargePages);
@@ -2744,11 +2839,11 @@ BOOL WINAPI debug(LPCVOID param) {
                                 } 
                                 
                                 // Check for VEH in remote process
-                                else if (strcmp(buff, "!veh") == 0) {
+                                else if (mystrcmp(buff, "!veh") == 0) {
                                     printf("\x1b[92m[+]\x1b[0m VEH: %lu\n", (DWORD)pbi.ProcessUsingVEH);
                                 }
 
-                                else if (strcmp(buff,"!symbreak") == 0) {
+                                else if (mystrcmp(buff,"!symbreak") == 0) {
 
                                     char *breakBuffer = (char*)malloc(100 * sizeof(char));
                                     if (!breakBuffer) {
@@ -2771,7 +2866,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                 }
                                 
                                 // Check memory protections
-                                else if (strcmp(buff, "!mbi") == 0) {
+                                else if (mystrcmp(buff, "!mbi") == 0) {
 
                                     LPVOID *breakBuffer = (LPVOID*)malloc(100 * sizeof(LPVOID));
                                     
@@ -2794,7 +2889,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                     free(breakBuffer);
                                 }
 
-                                   else if (strcmp(buff, "!break") == 0) {
+                                   else if (mystrcmp(buff, "!break") == 0) {
                                     char *breakBuffer = (char*)malloc(100 * sizeof(char));
                                     if (!breakBuffer) {
                                         printf("Memory allocation error\n");
@@ -2819,19 +2914,19 @@ BOOL WINAPI debug(LPCVOID param) {
                                 }
                                 
                                 // Get current register state dump
-                                 else if (strcmp(buff, "!getreg") == 0) {
+                                 else if (mystrcmp(buff, "!getreg") == 0) {
                                             if (!getThreads(threadId)) {
                                             printf("error getting threads\n");
                                             }
                                     }
                                 // CPU info
-                                    else if (strcmp(buff, "!cpu") == 0) {
+                                    else if (mystrcmp(buff, "!cpu") == 0) {
                                         if (!Getcpuinfo()) {
                                             printf("error %lu", GetLastError());
                                         }
                                     }
                                 // Dump raw bytes by address
-                                    else if (strcmp(buff, "!dump") == 0) {
+                                    else if (mystrcmp(buff, "!dump") == 0) {
                             
                                         printf("Which addr to get?\n");
 
@@ -2863,7 +2958,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                         
                                     }
 
-                                    else if (strcmp(buff, "!cc") == 0) {
+                                    else if (mystrcmp(buff, "!cc") == 0) {
                                         
                                         char breakBuffer[100] = {0};
                                         if (!breakBuffer) {
@@ -2884,7 +2979,7 @@ BOOL WINAPI debug(LPCVOID param) {
 
                                     }
 
-                                    else if (strcmp(buff, "!ccraw") == 0) {
+                                    else if (mystrcmp(buff, "!ccraw") == 0) {
 
                                         char breakBuffer[100] = {0};
                                         if (!breakBuffer) {
@@ -2912,13 +3007,13 @@ BOOL WINAPI debug(LPCVOID param) {
                                     }
 
                                     // Get section data 
-                                    else if (strcmp(buff, "!var") == 0) {
+                                    else if (mystrcmp(buff, "!var") == 0) {
                                         if (!getVariables(pi.dwProcessId)) {
                                             printf("Error enumerating sections\n");
                                             }
                                     }
 
-                                    else if (strcmp(buff, "kill") == 0) {
+                                    else if (mystrcmp(buff, "kill") == 0) {
                                        pNtTerminateProcess NtTerminateProcess = (pNtTerminateProcess)GetProcAddress(GetModuleHandle("ntdll.dll"), "NtTerminateProcess");
                                        if (!NtTerminateProcess) return FALSE;
                                        NTSTATUS status = NtTerminateProcess(hProcess, 0);
@@ -2930,7 +3025,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                     }
 
                                     // Run a DLL (Local)
-                                    else if (strcmp(buff, "!ext") == 0) {
+                                    else if (mystrcmp(buff, "!ext") == 0) {
 
                                     char *breakBuffer = (char*)malloc(100 * sizeof(char));
                                     if (!breakBuffer) {
@@ -2954,28 +3049,28 @@ BOOL WINAPI debug(LPCVOID param) {
 
                                     }
                                     // Get info from kuser
-                                    else if (strcmp(buff, "!gsi") == 0) {
+                                    else if (mystrcmp(buff, "!gsi") == 0) {
                                         getSystemInfo();
                                     }
                                     // get remote imports
-                                    else if (strcmp(buff, "!imports") == 0) {
+                                    else if (mystrcmp(buff, "!imports") == 0) {
                                         getRemoteImports(hProcess, NULL, 0);
                                     }
                                     // get signature of the file
-                                    else if (strcmp(buff, "!sig") == 0) {
+                                    else if (mystrcmp(buff, "!sig") == 0) {
                                         //wprintf(L"%ws", imagePath);
                                         getSignature(imagePath);
                                     }
                                     // cfg check
-                                    else if (strcmp(buff, "!cfg") == 0) {
+                                    else if (mystrcmp(buff, "!cfg") == 0) {
                                         cfgCheck(imagePath);
                                     }
 
-                                    else if (strcmp(buff, "!pwr") == 0) {
+                                    else if (mystrcmp(buff, "!pwr") == 0) {
                                         getCpuPower();
                                     }
 
-                                    else if (strcmp(buff, "!Inject") == 0) {
+                                    else if (mystrcmp(buff, "!Inject") == 0) {
                                             STARTUPINFO siI = { sizeof(si) };
                                             PROCESS_INFORMATION piI = { 0 };
                                         if (!CreateProcessA("DebuggerInjector.exe", NULL, NULL, NULL, 0, CREATE_NEW_CONSOLE, NULL, NULL, &siI, &piI)) {
@@ -2983,7 +3078,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                         }
                                     }
 
-                                    else if (strcmp(buff, "!wor") == 0) {
+                                    else if (mystrcmp(buff, "!wor") == 0) {
                                             
                                         STARTUPINFO siO = { sizeof(si) };
                                         PROCESS_INFORMATION piO = { 0 };
@@ -3010,7 +3105,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                         }
                                     }
 
-                                    else if (strcmp(buff, "!handles") == 0) {
+                                    else if (mystrcmp(buff, "!handles") == 0) {
                                     
                                         printf("\x1b[92m[-]\x1b[0m Proccess Number? - Enter for current process\n");
                                    
@@ -3034,15 +3129,15 @@ BOOL WINAPI debug(LPCVOID param) {
                                         free(breakBuffer);
                                     }
 
-                                    else if (strcmp(buff, "docs") == 0) {
+                                    else if (mystrcmp(buff, "docs") == 0) {
                                         docs();
                                     }
 
-                                    else if (strcmp(buff, "!entry") == 0) {
+                                    else if (mystrcmp(buff, "!entry") == 0) {
                                         getRemoteImports(hProcess, NULL, 1);
                                     }
 
-                                    else if (strcmp(buff, "start clip") == 0) {
+                                    else if (mystrcmp(buff, "start clip") == 0) {
                                         if (clipRan == 0) {
                                             clipSniper = 1;
                                         } else {
@@ -3050,7 +3145,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                         }   
                                     }
 
-                                    else if (strcmp(buff, "!dllcheck") == 0) {
+                                    else if (mystrcmp(buff, "!dllcheck") == 0) {
 
                                         char *breakBuffer = (char*)malloc(100 * sizeof(char));
                                         if (!breakBuffer) {
@@ -3071,11 +3166,11 @@ BOOL WINAPI debug(LPCVOID param) {
                                         checkRemoteDLL(hProcess, targetAddress, 100);
                                     }
 
-                                    else if (strcmp(buff, "!vehtable") == 0) {
+                                    else if (mystrcmp(buff, "!vehtable") == 0) {
                                         getVehTable(hProcess, 100);
                                     }
 
-                                    else if (strcmp(buff, "!write") == 0) {
+                                    else if (mystrcmp(buff, "!write") == 0) {
 
                                         char *breakBuffer = (char*)malloc(100 * sizeof(char));
                                         if (!breakBuffer) {
@@ -3111,7 +3206,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                         writeMem(hProcess, targetAddress, bytes2Write, byteCount);
                                     }
 
-                                    else if (strcmp(buff, "!dll") == 0) {
+                                    else if (mystrcmp(buff, "!dll") == 0) {
                                         listModules();
                                     }
                                     
@@ -3135,7 +3230,7 @@ int wmain(int argc, wchar_t* argv[]) {
         return 0;
     }
 
-    AllocatedRegion = makeMem(0x2000);
+    AllocatedRegion = makeMem(0x10000);
 
 
     LPVOID fiberMain = ConvertThreadToFiber(NULL); 
