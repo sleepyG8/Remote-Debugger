@@ -4,7 +4,6 @@
 #include <securitybaseapi.h>
 #include <sddl.h> 
 #include <AclAPI.h>
-#include <dbghelp.h>
 #include "capstone/capstone.h"
 //add terminate
 
@@ -13,7 +12,6 @@
 #pragma comment(lib, "User32.lib")
 #pragma comment(lib, "Advapi32.lib")
 #pragma comment(lib, "Psapi.lib")
-#pragma comment(lib, "dbghelp.lib")
 #pragma comment(lib, "Shell32.lib")
 #pragma comment(lib, "capstone.lib")
 
@@ -471,10 +469,10 @@ BYTE* readAlloc(BYTE* remoteMem, int startingOffset) {
 
 }
 
-// Using bump allocator cmd line, imports, handles
 BYTE* AllocatedRegion;
 int offsetHandles; // first allocation offset
 int offsetDump; // current do + 100
+int offsetHardwareBreak;
 // Capstone disasm
 BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address) {
     csh handle;
@@ -490,6 +488,8 @@ BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address) {
     // Disassemble
     count = cs_disasm(handle, code, size, address, 0, &insn);
     if (count > 0) {
+
+        int numofInstructions = 0;
         for (size_t i = 0; i < count; i++) {
 
                 //int didntPrintf = 0;
@@ -588,9 +588,12 @@ BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address) {
 
             printf("0x%"PRIx64":\t%s\t%s\n", insn[i].address, insn[i].mnemonic, insn[i].op_str, insn[i].bytes);
 
-            if (i == count) {
-                printf("[END]");
+            if (numofInstructions > 200) {
+                printf("Large Dump Press Enter to Continue...");
+                numofInstructions = 0;
+                getchar();
             }
+            numofInstructions++;
         }
 
         cs_free(insn, count);
@@ -761,31 +764,6 @@ BOOL listModules() {
     return TRUE;
 }
 
-// BOOL listImports() {
-
-//     for (int i=0; i < 3000; i++) {
-//         printf("%02X ", (unsigned char)AllocatedRegion[i]);
-//     }
-
-//     return 0;
-
-//     if (countImport == 0) {
-//         printf("You must run !imports first!\n");
-//         return 0;
-//     }
-
-//     for (int i=0; i < countImport; i++) {
-//     int currentOffset = i * 100;
-//     BYTE* import = readAlloc(AllocatedRegion, 300 + currentOffset);
-//     if (!import) continue;
-//     import[strcspn(import, "\n")] = '\0';
-//     printf("%s\n", import);
-//     }
-
-//     printf("num of imports: %lu\n", countImport);
-    
-//     return 0;
-// }
 int breakpointSet = 0;
 // Reading Imported Apis
 int getRemoteImports(HANDLE hProcess, char* breakFunction, BOOL entry) {
@@ -940,12 +918,11 @@ while (TRUE) {
         addImport(importByName->Name, funcAddr);
 
         // current num * 100
-        int currentOffset = i * 100;
+       // int currentOffset = i * 100;
 
-        // Storing into custom allocated buffer
-        const char buff[150];
-        snprintf(buff, 149, "%s-%p", importByName->Name, (void*)funcAddr);
-        alloc(AllocatedRegion, offsetHandles + 300 + currentOffset, buff);
+       // const char buff[150];
+       // snprintf(buff, 149, "%s-%p", importByName->Name, (void*)funcAddr);
+       // alloc(AllocatedRegion, offsetHandles + 300 + currentOffset, buff);
         
         BYTE hookedBytes[5];
         ReadProcessMemory(hProcess, funcAddr, &hookedBytes, sizeof(hookedBytes), NULL);
@@ -1494,46 +1471,46 @@ BOOL Getcpuinfo() {
 }
 
 //setting a breakpoint using the symbol file (I am working on adding normal breaks at addresses next)
-BOOL setBreakpointatSymbol(HANDLE hProcess, const char* symbol, char* module) {
-    if (!symbol) return FALSE;
+// BOOL setBreakpointatSymbol(HANDLE hProcess, const char* symbol, char* module) {
+//     if (!symbol) return FALSE;
 
 
     
-    SymInitialize(hProcess, NULL, TRUE);
+//     SymInitialize(hProcess, NULL, TRUE);
 
-    DWORD64 baseAddr = SymLoadModuleEx(hProcess, NULL, symbol, NULL, 0, 0, NULL, 0);
-if (!baseAddr) {
-    printf("Failed to load module %s, error: %lu\n", symbol, GetLastError());
-    return FALSE;
-}
+//     DWORD64 baseAddr = SymLoadModuleEx(hProcess, NULL, symbol, NULL, 0, 0, NULL, 0);
+// if (!baseAddr) {
+//     printf("Failed to load module %s, error: %lu\n", symbol, GetLastError());
+//     return FALSE;
+// }
 
-    //printf("data :%s\n", symbol);
-    SYMBOL_INFO *Symbol = (SYMBOL_INFO*)malloc(sizeof(SYMBOL_INFO) + MAX_SYM_NAME);
-    ZeroMemory(Symbol, sizeof(SYMBOL_INFO) + MAX_SYM_NAME);
-    Symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
-    Symbol->MaxNameLen = MAX_SYM_NAME;
+//     //printf("data :%s\n", symbol);
+//     SYMBOL_INFO *Symbol = (SYMBOL_INFO*)malloc(sizeof(SYMBOL_INFO) + MAX_SYM_NAME);
+//     ZeroMemory(Symbol, sizeof(SYMBOL_INFO) + MAX_SYM_NAME);
+//     Symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+//     Symbol->MaxNameLen = MAX_SYM_NAME;
 
-    if (SymFromName(hProcess, symbol, Symbol)) {
-        printf("Got symbol\n");
-    } else {
-        printf("no symbol file %lu\n", GetLastError());
-        free(Symbol);
-        return FALSE;
-    }
+//     if (SymFromName(hProcess, symbol, Symbol)) {
+//         printf("Got symbol\n");
+//     } else {
+//         printf("no symbol file %lu\n", GetLastError());
+//         free(Symbol);
+//         return FALSE;
+//     }
 
-    DWORD oldProtect;
-    if (!VirtualProtect(Symbol->Address, 1, PAGE_EXECUTE_READWRITE, &oldProtect)) {
-        printf("Failed to modify memory protection.\n");
-        free(Symbol);
-        return FALSE;
-    }
+//     DWORD oldProtect;
+//     if (!VirtualProtect(Symbol->Address, 1, PAGE_EXECUTE_READWRITE, &oldProtect)) {
+//         printf("Failed to modify memory protection.\n");
+//         free(Symbol);
+//         return FALSE;
+//     }
 
-    *(BYTE*)Symbol->Address = 0xCC;  // INT3 Breakpoint
+//     *(BYTE*)Symbol->Address = 0xCC;  // INT3 Breakpoint
 
-    VirtualProtect(Symbol->Address, 1, oldProtect, &oldProtect);
-    free(Symbol);
-    return TRUE;
-}
+//     VirtualProtect(Symbol->Address, 1, oldProtect, &oldProtect);
+//     free(Symbol);
+//     return TRUE;
+// }
 
 //gets mbi info which is useful for checking protections on a mem region
 //also, I built this for me to test regions while building this debugger
@@ -2476,7 +2453,7 @@ while (1) {
 }
 }
 
-// Shout out to rad98 - https://github.com/rad9800/misc/blob/main/bypasses/ClearVeh.c
+
 BOOL checkRemoteDLL(HANDLE hProcess, PVOID base, int size2read) {
 
 printf("base: %p\n", ntdllBase);
@@ -2554,7 +2531,7 @@ typedef struct _VECTXCPT_CALLOUT_ENTRY {
     PVECTORED_EXCEPTION_HANDLER VectoredHandler;
 } VECTXCPT_CALLOUT_ENTRY, *PVECTXCPT_CALLOUT_ENTRY;
 
-
+// Shout out to rad98 - https://github.com/rad9800/misc/blob/main/bypasses/ClearVeh.c
 BOOL getVehTable(HANDLE hProcess, int size2read) {
 
 printf("base: %p\n", ntdllBase);
@@ -2657,13 +2634,14 @@ BOOL WINAPI debug(LPCVOID param) {
 
     logo();
 
+    // 1 page of mem for chunked bump allocator
+    AllocatedRegion = makeMem(0x1000);
+
     // ATTACH stuff
     if (wcscmp(process, L"-c") == 0) {
 
                 pi.dwProcessId = GetProc(secondParam);
-                //printf("%lu\n", pi.dwProcessId);
                 pi.dwThreadId = threadid;
-                //printf("%lu\n", pi.dwProcessId);
 
                 if (pi.dwProcessId != 0 && pi.dwThreadId != 0) {
                 wprintf(L"\x1b[92m[+]\x1b[0m \033[35mDebugging %s:\033[0m\n", secondParam);
@@ -2727,9 +2705,7 @@ BOOL WINAPI debug(LPCVOID param) {
             ////////////////////////////////////////////////////////////////////
 
                     while (1) {   
-                        
-                               // unsigned char* clipData;
-    
+                            
                             if (clipSniper == 1) {
                              HANDLE hThread = CreateThread(NULL, 0, clipThread, hProcess, NULL, NULL);
                              if (hThread) {
@@ -2843,42 +2819,37 @@ BOOL WINAPI debug(LPCVOID param) {
                                     printf("\x1b[92m[+]\x1b[0m VEH: %lu\n", (DWORD)pbi.ProcessUsingVEH);
                                 }
 
-                                else if (mystrcmp(buff,"!symbreak") == 0) {
+                                // else if (mystrcmp(buff,"!symbreak") == 0) {
 
-                                    char *breakBuffer = (char*)malloc(100 * sizeof(char));
-                                    if (!breakBuffer) {
-                                        printf("Memory allocation error\n");
-                                    }
+                                //     char *breakBuffer = (char*)malloc(100 * sizeof(char));
+                                //     if (!breakBuffer) {
+                                //         printf("Memory allocation error\n");
+                                //     }
 
-                                    printf("\x1b[92m[-]\x1b[0m Which symbol to break at?\n");
+                                //     printf("\x1b[92m[-]\x1b[0m Which symbol to break at?\n");
 
-                                    if  (!fgets(breakBuffer, 99, stdin)) {
-                                    printf("buffer to large\n");
-                                    }
+                                //     if  (!fgets(breakBuffer, 99, stdin)) {
+                                //     printf("buffer to large\n");
+                                //     }
 
-                                    breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
-                                    // pdb break
-                                    if (!setBreakpointatSymbol(hProcess, breakBuffer, arg)) {
-                                        printf("Cannot set breakpoint must be from a .pdb file\n");
-                                    }
+                                //     breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
+                                //     // pdb break
+                                //     if (!setBreakpointatSymbol(hProcess, breakBuffer, arg)) {
+                                //         printf("Cannot set breakpoint must be from a .pdb file\n");
+                                //     }
                                 
-                                    free(breakBuffer);
-                                }
+                                //     free(breakBuffer);
+                                // }
                                 
                                 // Check memory protections
                                 else if (mystrcmp(buff, "!mbi") == 0) {
 
-                                    LPVOID *breakBuffer = (LPVOID*)malloc(100 * sizeof(LPVOID));
-                                    
-                                    if (!breakBuffer) {
-                                        printf("Memory allocation error\n");
-                                    }
-
                                     printf("\x1b[92m[-]\x1b[0m Which addr to get?\n");
 
-                                    if  (!fgets(breakBuffer, 99, stdin)) {
-                                    printf("buffer to large\n");
-                                    }
+                                    allocStdin(AllocatedRegion, offsetHandles + 800, stdin);
+
+                                    char* breakBuffer = readAlloc(AllocatedRegion, offsetHandles + 800);
+
 
                                    // getMBI, region checker
                                     breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
@@ -2890,17 +2861,12 @@ BOOL WINAPI debug(LPCVOID param) {
                                 }
 
                                    else if (mystrcmp(buff, "!break") == 0) {
-                                    char *breakBuffer = (char*)malloc(100 * sizeof(char));
-                                    if (!breakBuffer) {
-                                        printf("Memory allocation error\n");
-                                    }
-                                    
+                                                                    
                                     printf("\x1b[92m[-]\x1b[0m Which address to break at?\n");
                                    
-                                    if  (!fgets(breakBuffer, 99, stdin)) {
-                                    printf("buffer to large\n");
-                                    return FALSE;
-                                    }
+                                    offsetHardwareBreak = allocStdin(AllocatedRegion, offsetHandles + 300, stdin);
+
+                                    char* breakBuffer = readAlloc(AllocatedRegion, offsetHandles + 300);
 
                                     breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
 
@@ -3026,18 +2992,12 @@ BOOL WINAPI debug(LPCVOID param) {
 
                                     // Run a DLL (Local)
                                     else if (mystrcmp(buff, "!ext") == 0) {
-
-                                    char *breakBuffer = (char*)malloc(100 * sizeof(char));
-                                    if (!breakBuffer) {
-                                        printf("Memory allocation error\n");
-                                    }
                                     
                                     printf("\x1b[92m[-]\x1b[0m Which Extension to Load? (Path to dll)\n");
                                    
-                                    if  (!fgets(breakBuffer, 99, stdin)) {
-                                    printf("buffer to large\n");
-                                    return FALSE;
-                                    }
+                                    allocStdin(AllocatedRegion, offsetHandles + 400, stdin);
+
+                                    char* breakBuffer = readAlloc(AllocatedRegion, offsetHandles + 400);
 
                                     breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
 
@@ -3083,23 +3043,18 @@ BOOL WINAPI debug(LPCVOID param) {
                                         STARTUPINFO siO = { sizeof(si) };
                                         PROCESS_INFORMATION piO = { 0 };
                                     
-                                    char *breakBuffer = (char*)malloc(100 * sizeof(char));
-                                    if (!breakBuffer) {
-                                        printf("Memory allocation error\n");
-                                    }
                                     
-                                    printf("\x1b[92m[-]\x1b[0m Which path to Load? (Object Directory Ex: \\Device)\n");
+                                        printf("\x1b[92m[-]\x1b[0m Which path to Load? (Object Directory Ex: \\Device)\n");
                                    
-                                    if  (!fgets(breakBuffer, 99, stdin)) {
-                                    printf("buffer to large\n");
-                                    return FALSE;
-                                    }
+                                        allocStdin(AllocatedRegion, offsetHandles + 500, stdin);
 
-                                    char finalbuff[100];
+                                        char* breakBuffer = readAlloc(AllocatedRegion, offsetHandles + 500);
+                                        
+                                        char finalbuff[100];
 
-                                    snprintf(finalbuff, 99, "cmd.exe /k wor.exe %s & pause", breakBuffer);
+                                        snprintf(finalbuff, 99, "cmd.exe /k wor.exe %s & pause", breakBuffer);
 
-                                    breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
+                                        breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
                                         if (!CreateProcessA(NULL, finalbuff, NULL, NULL, 0, CREATE_NEW_CONSOLE, NULL, NULL, &siO, &piO)) {
                                             printf("Make sure wor.exe is inside of the current Directory, use docs to get it.\n");
                                         }
@@ -3146,18 +3101,12 @@ BOOL WINAPI debug(LPCVOID param) {
                                     }
 
                                     else if (mystrcmp(buff, "!dllcheck") == 0) {
-
-                                        char *breakBuffer = (char*)malloc(100 * sizeof(char));
-                                        if (!breakBuffer) {
-                                           printf("Memory allocation error\n");
-                                        }
                                     
                                         printf("\x1b[92m[-]\x1b[0m Address to get sections?\n");
                                    
-                                        if  (!fgets(breakBuffer, 99, stdin)) {
-                                        printf("buffer to large\n");
-                                        return FALSE;
-                                        }
+                                        allocStdin(AllocatedRegion, offsetHandles + 600, stdin);
+
+                                        char* breakBuffer = readAlloc(AllocatedRegion, offsetHandles + 600);
 
                                         breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
 
@@ -3172,17 +3121,11 @@ BOOL WINAPI debug(LPCVOID param) {
 
                                     else if (mystrcmp(buff, "!write") == 0) {
 
-                                        char *breakBuffer = (char*)malloc(100 * sizeof(char));
-                                        if (!breakBuffer) {
-                                           printf("Memory allocation error\n");
-                                        }
-                                    
                                         printf("\x1b[92m[!]\x1b[0m Address write data?\n");
                                    
-                                        if  (!fgets(breakBuffer, 99, stdin)) {
-                                        printf("buffer to large\n");
-                                        return FALSE;
-                                        }
+                                        allocStdin(AllocatedRegion, offsetHandles + 700, stdin);
+
+                                        char* breakBuffer = readAlloc(AllocatedRegion, offsetHandles + 700);
 
                                         breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
 
@@ -3229,9 +3172,6 @@ int wmain(int argc, wchar_t* argv[]) {
         puts("No debugging the debugger");
         return 0;
     }
-
-    AllocatedRegion = makeMem(0x10000);
-
 
     LPVOID fiberMain = ConvertThreadToFiber(NULL); 
     LPVOID debugFiber = CreateFiber(0, debug, argv[1]);
