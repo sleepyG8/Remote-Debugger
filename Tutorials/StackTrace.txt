@@ -1,0 +1,28 @@
+Stack Trace:
+============
+
+Commands: !Inject, !dump
+
+Dll: stackWalk.dll
+
+You may be in a position where you want to
+know the last few functions that have been 
+called in a process. Most people would say,
+well how would you do that if the functions
+have already been called? Well, thats where
+something called stack unwinding comes in
+handy.
+
+I have been working on a custom version of
+the stackWalk.dll that doesnt use
+RtlLookupFunctionEntry or RtlVirtualUnwind
+but this one does use those to get the job
+done.
+
+To perform a stack trace simple run !Inject,
+make sure you have a Injector ready or the 
+provided one, and inject the stackWalk.dll.
+
+After getting the past few RIP addresses, 
+use the !dump command to disasm the function 
+and see what was actually ran.
