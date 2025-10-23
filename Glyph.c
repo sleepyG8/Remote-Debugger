@@ -2617,6 +2617,42 @@ BOOL writeMem(HANDLE hProcess, void* address, BYTE* data, int size) {
 
 }
 
+BOOL staticDisasm() {
+
+    typedef int(__stdcall* pDisasm)(int argc, char* argv[]);
+
+    void* hMod = LoadLibraryA("staticDisasm.dll");
+
+    if (!hMod) {
+        printf("Place staticDisasm.dll into the current directory\n");
+    }
+
+    pDisasm Disasm = (pDisasm)GetProcAddress(hMod, "staticDisasm");
+
+    if (!Disasm) return 0;
+
+    char* args[3];
+
+    printf("Which file to scan?\n");
+    char buff[MAX_PATH];
+    fgets(buff, sizeof(buff), stdin);
+
+    buff[strcspn(buff, "\n")] = '\0';
+
+    printf("How many bytes to read?\n");
+
+    char intbuff[100];
+    fgets(intbuff, sizeof(intbuff), stdin);
+
+    intbuff[strcspn(intbuff, "\n")] = '\0';
+    
+    args[0] = "staticDisasm";
+    args[1] = buff;
+    args[2] = intbuff;
+
+    Disasm(3, args);
+}
+
 wchar_t* secondParam = NULL; // argv[2]
 wchar_t* dllChoice; // Only for DLLs
 // Eyes start bleeding now
@@ -3151,6 +3187,10 @@ BOOL WINAPI debug(LPCVOID param) {
 
                                     else if (mystrcmp(buff, "!dll") == 0) {
                                         listModules();
+                                    }
+
+                                    else if (mystrcmp(buff, "!static") == 0) {
+                                        staticDisasm();
                                     }
                                     
 
