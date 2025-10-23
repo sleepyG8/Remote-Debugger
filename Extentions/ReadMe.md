@@ -17,3 +17,7 @@ The second "optional" parameter is either a harddisk or a shadowcopy to walk, it
 ## entropyCheck.dll
 
 If in the debuggers directory it gives a shannon entropy rating 1-8 when !dump is ran
+
+## staticDisasm.dll
+
+Reads a file from disk and disassembles its .text section, run !static
