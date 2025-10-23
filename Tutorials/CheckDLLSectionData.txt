@@ -1,0 +1,8 @@
+Getting the section data of a loaded module
+===========================================
+
+commands: !var, !dump
+
+it is often, when you need to check a PEs 
+section data. It was a must have feature 
+when I was creating Glyph. 
