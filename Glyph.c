@@ -5,6 +5,7 @@
 #include <sddl.h> 
 #include <AclAPI.h>
 #include "capstone/capstone.h"
+#include "intrin.h"
 //add terminate
 
 #define STATUS_SUCCESS ((NTSTATUS)0x00000000L)
@@ -330,6 +331,22 @@ typedef struct {
 Imports* imports = NULL;
 size_t countImport = 0;
 
+int getCPUVendor() {
+
+    // https://www.felixcloutier.com/x86/cpuid
+    // 0F A2 - Returns processor identification and feature information to the EAX, EBX, ECX, and EDX registers, as determined by input entered in EAX (in some cases, ECX as well).
+    
+    int cpu_info[4];
+    __cpuid(cpu_info, 0);
+
+    char vendor[13]; // Always 13 bytes
+    memcpy(&vendor[0], &cpu_info[1], 4); // first 4 bytes are in ebx
+    memcpy(&vendor[4], &cpu_info[3], 4); // second in edx
+    memcpy(&vendor[8], &cpu_info[2], 4); // third in ecx
+    vendor[12] = '\0';
+
+    printf("CPU: %s\n", vendor);
+} 
 // Helpers
 int mystrcmp(char* one, char* two) {
 
@@ -341,7 +358,6 @@ int mystrcmp(char* one, char* two) {
     }
     return 0;
 }
-
 
 int Score; // Globally Function tracking
 BOOL MalCheck(char* funcName) {
@@ -448,9 +464,14 @@ int allocStdin(BYTE* remoteMem, int startingOffset, FILE* data) {
 
 }
 
+BYTE* AllocatedRegion;
+int offsetHandles; // first allocation offset
+int offsetDump; // current do + 100
+int offsetHardwareBreak;
 BYTE* readAlloc(BYTE* remoteMem, int startingOffset) {
 
-    BYTE* temp = malloc(100);
+    BYTE* temp = AllocatedRegion + 900;
+
     int i;
     for (i=0; i < 100; i++) {
 
@@ -469,10 +490,6 @@ BYTE* readAlloc(BYTE* remoteMem, int startingOffset) {
 
 }
 
-BYTE* AllocatedRegion;
-int offsetHandles; // first allocation offset
-int offsetDump; // current do + 100
-int offsetHardwareBreak;
 // Capstone disasm
 BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address) {
     csh handle;
@@ -3191,6 +3208,10 @@ BOOL WINAPI debug(LPCVOID param) {
 
                                     else if (mystrcmp(buff, "!static") == 0) {
                                         staticDisasm();
+                                    }
+
+                                    else if (mystrcmp(buff, "!vendor") == 0) {
+                                            getCPUVendor();
                                     }
                                     
 
