@@ -6,6 +6,7 @@
 #include <AclAPI.h>
 #include "capstone/capstone.h"
 #include "intrin.h"
+
 //add terminate
 
 #define STATUS_SUCCESS ((NTSTATUS)0x00000000L)
@@ -2028,6 +2029,7 @@ NTSTATUS status = NtQuerySystemInformation(64, NULL, 0, &retlen);
     while (status == STATUS_INFO_LENGTH_MISMATCH) {
     handles = (SYSTEM_HANDLE_INFORMATION_EX*)malloc(retlen);
     status = NtQuerySystemInformation(64, handles, retlen, &retlen);
+    printf("%lu\n", retlen);
     if (status == STATUS_INFO_LENGTH_MISMATCH) {
         free(handles);
     }
@@ -2039,10 +2041,14 @@ NTSTATUS status = NtQuerySystemInformation(64, NULL, 0, &retlen);
      // Compare
     if (procNum == data.UniqueProcessId) {
          printf("PID: %llu | Handle: 0x%llx | Type: %hu\n", (unsigned long long)data.UniqueProcessId, (unsigned long long)data.HandleValue, data.ObjectTypeIndex);
+         //printf("%lu - %lu\n", i, handles->NumberOfHandles);
+
         }
+
     
     }
 
+    printf("Done\n");
 
     return TRUE;
 }
@@ -2616,10 +2622,6 @@ if (!ReadProcessMemory(hProcess, (BYTE*)ntdllBase + sectionOffset + (i * sizeof(
         next = entry.Links.Flink;
     }
 
-
-
-
-
     }
     
 }
@@ -2634,7 +2636,7 @@ BOOL writeMem(HANDLE hProcess, void* address, BYTE* data, int size) {
 
 }
 
-BOOL staticDisasm() {
+BOOL staticDisasm(char* buff, char* intbuff) {
 
     typedef int(__stdcall* pDisasm)(int argc, char* argv[]);
 
@@ -2649,19 +2651,6 @@ BOOL staticDisasm() {
     if (!Disasm) return 0;
 
     char* args[3];
-
-    printf("Which file to scan?\n");
-    char buff[MAX_PATH];
-    fgets(buff, sizeof(buff), stdin);
-
-    buff[strcspn(buff, "\n")] = '\0';
-
-    printf("How many bytes to read?\n");
-
-    char intbuff[100];
-    fgets(intbuff, sizeof(intbuff), stdin);
-
-    intbuff[strcspn(intbuff, "\n")] = '\0';
     
     args[0] = "staticDisasm";
     args[1] = buff;
@@ -2677,7 +2666,6 @@ wchar_t* dllChoice; // Only for DLLs
 char *breakBuff;
 BOOL clipSniper = 0;
 BOOL clipRan = 0;
-
 BOOL WINAPI debug(LPCVOID param) {
 
     wchar_t *arg = (wchar_t*)param;
@@ -3134,7 +3122,7 @@ BOOL WINAPI debug(LPCVOID param) {
 
                                         dumpHandle(temp);
 
-                                        free(breakBuffer);
+                                        //free(breakBuffer);
                                     }
 
                                     else if (mystrcmp(buff, "docs") == 0) {
@@ -3207,7 +3195,21 @@ BOOL WINAPI debug(LPCVOID param) {
                                     }
 
                                     else if (mystrcmp(buff, "!static") == 0) {
-                                        staticDisasm();
+
+                                            printf("Which file to scan?\n");
+                                            
+                                            char buff[MAX_PATH];  
+                                            fgets(buff, sizeof(buff), stdin);
+                                            buff[strcspn(buff, "\n")] = '\0';
+    
+                                            printf("How many bytes to read?\n");
+    
+                                            char intbuff[100];    
+                                            fgets(intbuff, sizeof(intbuff), stdin);
+
+                                            intbuff[strcspn(intbuff, "\n")] = '\0';
+                                        
+                                            staticDisasm(buff, intbuff);
                                     }
 
                                     else if (mystrcmp(buff, "!vendor") == 0) {
@@ -3274,6 +3276,28 @@ int wmain(int argc, wchar_t* argv[]) {
         printHelp();
 
         return 0;
+    }
+
+    if (wcscmp(argv[1], L"-s") == 0) {
+
+        printf("File scanner - From the Glyph engine\n");
+
+        printf("Which file to scan?\n");                                          
+                                        
+        char buff[MAX_PATH];                                              
+        fgets(buff, sizeof(buff), stdin);                                            
+        buff[strcspn(buff, "\n")] = '\0';    
+                                            
+        printf("How many bytes to read?\n");
+                                                
+        char intbuff[100];                                                
+        fgets(intbuff, sizeof(intbuff), stdin);    
+        intbuff[strcspn(intbuff, "\n")] = '\0';
+                                                                            
+        staticDisasm(buff, intbuff);
+
+        return 0;
+
     }
 
 
@@ -3356,6 +3380,7 @@ int wmain(int argc, wchar_t* argv[]) {
         dllExports(secondParam);
         return 0;
         }
+        
 
         return 0;
     }
