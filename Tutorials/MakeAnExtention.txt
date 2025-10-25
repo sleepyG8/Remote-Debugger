@@ -1,0 +1,49 @@
+Making an extention for Glyph
+=============================
+
+There are a couple of ways to create and
+implement your own custom extentions into
+Glyph.
+
+The main way is to create a DLL with a DLLMAIN
+entrypoint. The extentions utilize the Windows
+loader to get the job done, nothing custom this
+time.
+
+Option 1:
+
+A DLL with an entrypoint of DLLMAIN can be loaded
+with the !ext command. This command allows to load
+DLLs that will work on the debuggers end.
+
+Option 2:
+
+Create a DLL to be injected into a remote process
+for introspection. This kind of DLL must also have
+an entrypoint of DLLMAIN and can be ran with the 
+!Inject command. These DLLs run entirely in the 
+context of the remote process.
+
+Option 3:
+
+This option allows to create a DLL with an exported
+function you wish to use within glyph. There is no 
+command for this yet, but I provided an example named
+teb.c that shows an example workflow of what my 
+extentions look like. A key thing about this way of 
+creating extentions is that you must edit the source 
+and add your own command line argument under the debug
+function.
+
+Tutorial:
+=========
+
+I provided an example DLL under the Extentions/TEB folder.
+After checking out the source and compiling it, run the
+!teb command to sucessfully use the DLL and dump the teb.
+Without this DLL you will get a warning message.
+
+TIP: If you would like to have your DLL added to the repo,
+send it to me personally and ill check it out. In the future
+I plan on having an open extentions database on my website.
+
