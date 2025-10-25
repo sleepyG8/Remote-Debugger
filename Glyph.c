@@ -2053,6 +2053,29 @@ NTSTATUS status = NtQuerySystemInformation(64, NULL, 0, &retlen);
     return TRUE;
 }
 
+BOOL getTEBExtention(HANDLE hProcess, HANDLE thread) {
+
+    typedef int(__stdcall* pGetTeb)(HANDLE, HANDLE);
+
+    void* hMod = LoadLibraryA("teb.dll");
+
+    if (!hMod) {
+        printf("Place teb.dll into the current directory\n");
+        return TRUE;
+    }
+
+    pGetTeb getTeb = (pGetTeb)GetProcAddress(hMod, "getTEB");
+
+    if (!getTeb) return 0;
+
+    // HANDLE handle = GetCurrentThread();
+    // HANDLE prochandle = GetCurrentProcess();
+
+    getTeb(hProcess, thread);
+
+
+}
+
 ///////////////////////////////////////////////////////////////////
 //         Reading elfs from disk using raw parsing              //
 ///////////////////////////////////////////////////////////////////
@@ -2644,6 +2667,7 @@ BOOL staticDisasm(char* buff, char* intbuff) {
 
     if (!hMod) {
         printf("Place staticDisasm.dll into the current directory\n");
+        return TRUE;
     }
 
     pDisasm Disasm = (pDisasm)GetProcAddress(hMod, "staticDisasm");
@@ -3214,6 +3238,12 @@ BOOL WINAPI debug(LPCVOID param) {
 
                                     else if (mystrcmp(buff, "!vendor") == 0) {
                                             getCPUVendor();
+                                    }
+
+                                    else if (mystrcmp(buff, "!teb") == 0) {
+                                        // Open a thread handle for ATTACH but universal with START
+                                        HANDLE hThread = OpenThread(THREAD_QUERY_INFORMATION, FALSE, threadId);
+                                        getTEBExtention(hProcess, hThread); // Dumping remote TEB
                                     }
                                     
 
