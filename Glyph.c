@@ -509,7 +509,7 @@ BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address) {
 
         int numofInstructions = 0;
         for (size_t i = 0; i < count; i++) {
-
+                int printed = 0;
                 //int didntPrintf = 0;
                 for (int k=0; k < countImport; k++) {
 
@@ -569,6 +569,7 @@ BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address) {
 
                     if (finalComputedAddress == (uint64_t)(uintptr_t)imports[k].address) {
                     
+                        //printf("%llX - %llX\n", finalComputedAddress, imports[k].address);
                         printf("\x1b[32m%s ->\x1b[0m 0x%"PRIx64":\t%s\t%s\n", imports[k].name, (uint64_t)imports[k].address, insn[i].mnemonic, insn[i].op_str);
                     
                         // Checking function names and giving a global Score
@@ -579,8 +580,15 @@ BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address) {
                             getchar();
                         }
 
-                        continue;
+                } else {
+                    if (printed == 0) {
+                    printf("0x%"PRIx64":\t%s\t%s -> 0x%llX\n", insn[i].address, insn[i].mnemonic, insn[i].op_str, finalComputedAddress);
+                    printed = 1;
+                    }
                 }
+
+                continue;
+
             }
 
                 if (strncmp(insn[i].op_str, "0x", 2) == 0) {
@@ -606,7 +614,7 @@ BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address) {
 
             printf("0x%"PRIx64":\t%s\t%s\n", insn[i].address, insn[i].mnemonic, insn[i].op_str, insn[i].bytes);
 
-            if (numofInstructions > 200) {
+            if (numofInstructions > 500) {
                 printf("Large Dump Press Enter to Continue...");
                 numofInstructions = 0;
                 getchar();
@@ -782,16 +790,26 @@ BOOL listModules() {
     return TRUE;
 }
 
+
+typedef struct {
+    char name[150];
+    void* address;
+} HookedFunctions;
+
+HookedFunctions* hooked;
+int counthooked = 0;
+
 int breakpointSet = 0;
 // Reading Imported Apis
 int getRemoteImports(HANDLE hProcess, char* breakFunction, BOOL entry) {
 
-printf("+++++++++++++++++++++++++++++++++++++++++++\n");
+hooked = malloc(50 * sizeof(HookedFunctions));
+// printf("+++++++++++++++++++++++++++++++++++++++++++\n");
 
-if (breakpointSet == 0) {
-printf("Remote Imports:\n");
-printf("Base: %p\n", (void*)peb.Base);
-}
+// if (breakpointSet == 0) {
+// printf("Remote Imports:\n");
+// printf("Base: %p\n", (void*)peb.Base);
+// }
 
 
 //getting base address
@@ -811,10 +829,7 @@ if (!ReadProcessMemory(hProcess, baseAddress, &dh, sizeof(IMAGE_DOS_HEADER), NUL
 if (dh.e_magic != IMAGE_DOS_SIGNATURE) {
     printf("error 3 %lu\n", GetLastError());
     return 1;
-} else {
-    printf("Valdid PE file: YES-%x\n", dh.e_magic);
 }
-
 
 //getting nt headers
 #ifdef _WIN64
@@ -874,9 +889,9 @@ if (!ReadProcessMemory(hProcess, (BYTE*)baseAddress + id.Name,
     return 1;
 }
 
-if (breakpointSet == 0) {
-printf("%s\n", (char*)importName);
-}
+// if (breakpointSet == 0) {
+// printf("%s\n", (char*)importName);
+// }
 
 //if (mystrcmp(importName, "OLEAUT32.dll") == 0) break;
 
@@ -928,10 +943,10 @@ while (TRUE) {
 
         PIMAGE_IMPORT_BY_NAME importByName = (PIMAGE_IMPORT_BY_NAME)importBuffer;
 
-        if (breakpointSet == 0)  {
-        printf("+ %s\n", importByName->Name);
-        printf("Function Address: 0x%p\n", funcAddr);
-        }
+        // if (breakpointSet == 0)  {
+        // printf("+ %s\n", importByName->Name);
+        // printf("Function Address: 0x%p\n", funcAddr);
+        // }
 
         addImport(importByName->Name, funcAddr);
 
@@ -946,10 +961,16 @@ while (TRUE) {
         ReadProcessMemory(hProcess, funcAddr, &hookedBytes, sizeof(hookedBytes), NULL);
 
         if (hookedBytes[0] == 0xE9) {
-            printf("\033[31m[!]\033[0m [Hook detected! at ");
-            printf("%s ", importByName->Name);
-            printf("Function Address: 0x%p]\n", funcAddr);
+
+            strcpy(hooked[counthooked].name, imports[i].name);
+
+            hooked[counthooked].name[sizeof(hooked[counthooked].name) - 1] = '\0';
+
+            hooked[counthooked].address = imports[i].address;
+
+            counthooked++;
         }
+
 
 
         BYTE patch[10];
@@ -974,9 +995,9 @@ while (TRUE) {
         i++;
         }
     
-if (breakpointSet == 0) {
-printf("+++++++++++++++++++++++++++++++++++++++++++\n");
-}
+// if (breakpointSet == 0) {
+// printf("+++++++++++++++++++++++++++++++++++++++++++\n");
+// }
 
 // Move forward 1 ID just like my ID++
 importDescAddr += sizeof(IMAGE_IMPORT_DESCRIPTOR);
@@ -1154,7 +1175,6 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread, DWOR
     printf("\n\033[35m+-----------Startup-Info-----------+\033[0m\n");
     
    // printf("PEB Address of the target process: %s\n", proc.PebBaseAddress);
-    printf("\x1b[92m[+]\x1b[0m Peb address: 0x%llX", proc.PebBaseAddress);
     peb.pebaddr = proc.PebBaseAddress;
    
    //printf("Peb struct address: %p", peb.pebaddr);
@@ -1166,6 +1186,9 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread, DWOR
         printf("Failed to read PEB from the target process (Error %lu)\n", GetLastError());
         return FALSE;
     }
+
+    printf("\x1b[92m[+]\x1b[0m Peb address: 0x%llX\t", proc.PebBaseAddress);
+
    // printf("Parameters: %i\n", pbi.ProcessParameters->CommandLine.Length); this is only for terminal apps
    // printf("Is Protected Process?: %lu\n", pbi.IsProtectedProcess);
     printf("\x1b[92m[+]\x1b[0m IsBeingDebugged: %i\n", pbi.BeingDebugged);
@@ -2346,11 +2369,13 @@ BOOL printHelp() {
     
     printf("!break    - Set a breakpoint and read registers\n");
     
-    printf("!synbreak - Break at a debug symbol (not stable yet)\n");
+    //printf("!synbreak - Break at a debug symbol (not stable yet)\n");
 
     printf("!cc       - int3 break at a function address\n");
 
     printf("!ccraw    - Break at a supplied address\n");
+
+    printf("!write    - Write to a Address ex. CC\n");
 
     printf("\n-- Memory & Data Inspection --\n");
     
@@ -2373,6 +2398,10 @@ BOOL printHelp() {
     printf("!dllcheck - walk remote dll sections\n");
     
     printf("!wor      - Walker object ranger - Object scanner\n");
+
+    printf("!hooked   - View all hooked functions\n");
+
+    printf("!static   - Disasm a file from Disk\n");
     
     printf("!Inject   - Inject an extention Dll - Must have the DebuggerInjector.exe\n");
 
@@ -2397,6 +2426,8 @@ BOOL printHelp() {
     printf("!pwr      - Check CPU GHz\n");
     
     printf("!handles  - Dump Handles\n");
+
+    printf("!vendor   - Get CPU vendor\n");
 
     printf("!dll       - List all loaded modules\n");
 
@@ -2622,32 +2653,36 @@ if (!ReadProcessMemory(hProcess, (BYTE*)ntdllBase + sectionOffset + (i * sizeof(
     BYTE* address = (BYTE*)ntdllBase + section.VirtualAddress;
     printf("\x1b[92m[+]\x1b[0m Section: %s | Address: 0x%p | Size: %d\n", section.Name, (void*)address, section.SizeOfRawData);
 
-    LIST_ENTRY* buffer = (LIST_ENTRY*)malloc(section.SizeOfRawData);
-    if (!ReadProcessMemory(hProcess, (BYTE*)ntdllBase + section.VirtualAddress, buffer, section.SizeOfRawData, NULL)) {
+    LIST_ENTRY buffer;
+    if (!ReadProcessMemory(hProcess, (BYTE*)ntdllBase + section.VirtualAddress, &buffer, sizeof(buffer), NULL)) {
         printf("Error reading data %lu\n", GetLastError());
     }
 
     // Common list walk
-    LIST_ENTRY* head = buffer;
-    LIST_ENTRY* next = head->Flink;
+    LIST_ENTRY next = buffer;
+    
 
-    while (next != head) {
+    while (next.Flink != 0) {
         VECTXCPT_CALLOUT_ENTRY entry;
-        if (!ReadProcessMemory(hProcess, next, &entry, sizeof(VECTXCPT_CALLOUT_ENTRY), NULL)) {
-            printf("error\n");
-            return 0;
+        if (!ReadProcessMemory(hProcess, next.Flink, &entry, sizeof(VECTXCPT_CALLOUT_ENTRY), NULL)) {
+            printf("END\n");
+            break;
         }
 
         printf("Encoded Handler: %p\n", entry.VectoredHandler);
         printf("Decoded Handler: %p\n", DecodePointer(entry.VectoredHandler));
 
         
-        next = entry.Links.Flink;
+         if (!ReadProcessMemory(hProcess, next.Flink, &next, sizeof(next), NULL)) {
+            break;
+        }
     }
 
     }
     
 }
+
+return 0;
 }
 
 BOOL writeMem(HANDLE hProcess, void* address, BYTE* data, int size) {
@@ -2757,6 +2792,9 @@ BOOL WINAPI debug(LPCVOID param) {
 
             // Getting PEB / Startup info
             GetPEBFromAnotherProcess(hProcess, pi.dwThreadId, pi.dwProcessId);
+
+            // Loading the Import struct
+            getRemoteImports(hProcess, NULL, 0);
 
             printf("\x1b[92m[+]\x1b[0m Thread address/ID: %lu\n", threadId);
 
@@ -3079,7 +3117,11 @@ BOOL WINAPI debug(LPCVOID param) {
                                     }
                                     // get remote imports
                                     else if (mystrcmp(buff, "!imports") == 0) {
-                                        getRemoteImports(hProcess, NULL, 0);
+                                        printf("Imports:\n");
+                                        for (int i=0; i < countImport; i++) {
+                                            printf("%s - %llX\n", imports[i].name, imports[i].address);
+                                        }
+                                        puts("END");
                                     }
                                     // get signature of the file
                                     else if (mystrcmp(buff, "!sig") == 0) {
@@ -3244,6 +3286,14 @@ BOOL WINAPI debug(LPCVOID param) {
                                         // Open a thread handle for ATTACH but universal with START
                                         HANDLE hThread = OpenThread(THREAD_QUERY_INFORMATION, FALSE, threadId);
                                         getTEBExtention(hProcess, hThread); // Dumping remote TEB
+                                    }
+
+                                    else if (mystrcmp(buff, "!hooked") == 0) {
+                                        for (int i=0; i < counthooked; i++) {                                            
+                                        printf("\033[31m[!]\033[0m [Hook detected! at ");
+                                        printf("%s ", hooked[i].name);
+                                        printf("Function Address: 0x%p]\n", hooked[i].address);
+                                        }
                                     }
                                     
 
