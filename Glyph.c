@@ -465,7 +465,7 @@ int allocStdin(BYTE* remoteMem, int startingOffset, FILE* data) {
 
 }
 
-BYTE* AllocatedRegion;
+BYTE AllocatedRegion[0x1000];
 int offsetHandles; // first allocation offset
 int offsetDump; // current do + 100
 int offsetHardwareBreak;
@@ -613,6 +613,30 @@ BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address) {
             }
 
             printf("0x%"PRIx64":\t%s\t%s\n", insn[i].address, insn[i].mnemonic, insn[i].op_str, insn[i].bytes);
+
+                if (mystrcmp(insn[i].mnemonic, "call") == 0) {
+                puts("\n+++++++CALL-TRACE+++++++++");
+                unsigned char bytes[100];
+                ReadProcessMemory(hProcess, insn[i].address, &bytes, sizeof(bytes), NULL);
+
+                for (int i=0; i < sizeof(bytes); i++){
+                    printf("%02X ", bytes[i]);
+                    if ((i + 1) % 16 == 0) printf("\n");
+                }
+
+                printf("\n");
+
+                 cs_insn *insn2;
+                 int newCount = cs_disasm(handle, bytes, 100, insn[i].address, 0, &insn2);
+
+                // printf("newCount: %lu\n", newCount);
+                 if (newCount > 0) {
+
+                    for (int j=0; j < newCount; j++) {
+                    printf(" CALL: 0x%"PRIx64":\t%s\t%s\n", insn2[j].address, insn2[j].mnemonic, insn2[j].op_str, insn2[j].bytes);
+                    }
+                }
+            }
 
             if (numofInstructions > 500) {
                 printf("Large Dump Press Enter to Continue...");
@@ -927,9 +951,8 @@ while (TRUE) {
 
         IMAGE_IMPORT_BY_NAME importByName;
 
-        if (!ReadProcessMemory(hProcess, (LPCVOID)((BYTE*)baseAddress + origThunk.u1.AddressOfData), &importByName, sizeof(IMAGE_IMPORT_BY_NAME), NULL)) {
-            printf("error 3 %lu\n", GetLastError());
-            }
+        ReadProcessMemory(hProcess, (LPCVOID)((BYTE*)baseAddress + origThunk.u1.AddressOfData), &importByName, sizeof(IMAGE_IMPORT_BY_NAME), NULL);
+            
 
         if (importByName.Name != NULL) {
         FARPROC funcAddr = (FARPROC)thunkData.u1.Function;
@@ -937,9 +960,8 @@ while (TRUE) {
 
         // read into larger buffer
         BYTE importBuffer[256] = {0};  // Enough to hold most function names
-        if (!ReadProcessMemory(hProcess, (LPCVOID)((BYTE*)baseAddress + origThunk.u1.AddressOfData), &importBuffer, sizeof(importBuffer), NULL)) {
-        printf("error 4 %lu\n", GetLastError());
-        }
+        ReadProcessMemory(hProcess, (LPCVOID)((BYTE*)baseAddress + origThunk.u1.AddressOfData), &importBuffer, sizeof(importBuffer), NULL);
+        
 
         PIMAGE_IMPORT_BY_NAME importByName = (PIMAGE_IMPORT_BY_NAME)importBuffer;
 
@@ -2735,7 +2757,7 @@ BOOL WINAPI debug(LPCVOID param) {
     logo();
 
     // 1 page of mem for chunked bump allocator
-    AllocatedRegion = makeMem(0x1000);
+    
 
     // ATTACH stuff
     if (wcscmp(process, L"-c") == 0) {
