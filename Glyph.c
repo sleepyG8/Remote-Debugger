@@ -1026,6 +1026,61 @@ importDescAddr += sizeof(IMAGE_IMPORT_DESCRIPTOR);
 }
 }
 
+int getExceptionDir(HANDLE hProcess) {
+    BYTE* baseAddress = peb.Base;
+
+if (peb.Base == 0) return 1;
+
+//reading dos header
+IMAGE_DOS_HEADER dh;
+
+if (!ReadProcessMemory(hProcess, baseAddress, &dh, sizeof(IMAGE_DOS_HEADER), NULL)) {
+    printf("error reading memory of process ID\n");
+   return 1;
+}
+
+//checks for a valid PE file
+if (dh.e_magic != IMAGE_DOS_SIGNATURE) {
+    printf("error 3 %lu\n", GetLastError());
+    return 1;
+}
+
+//getting nt headers
+#ifdef _WIN64
+IMAGE_NT_HEADERS64 nt;
+#else
+IMAGE_NT_HEADERS32 nt;
+#endif
+
+if (!ReadProcessMemory(hProcess, (BYTE*)baseAddress + dh.e_lfanew, &nt, sizeof(IMAGE_NT_HEADERS), NULL)) {
+    printf("error reading NT headers from remote process\n");
+    return 1;
+}
+
+//optional headers
+IMAGE_OPTIONAL_HEADER oh;
+if (!ReadProcessMemory(hProcess, (BYTE*)baseAddress + dh.e_lfanew + offsetof(IMAGE_NT_HEADERS, OptionalHeader), 
+                       &oh, sizeof(IMAGE_OPTIONAL_HEADER), NULL)) {
+    printf("Error reading Optional Header\n");
+    return 1;
+}
+
+DWORD rva = oh.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXCEPTION].VirtualAddress;
+DWORD size = oh.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXCEPTION].Size;
+
+_IMAGE_RUNTIME_FUNCTION_ENTRY* entries = malloc(size);
+ReadProcessMemory(hProcess, baseAddress + rva, entries, size, NULL);
+
+for (int i=0; i < size / sizeof(_IMAGE_RUNTIME_FUNCTION_ENTRY); i++) {
+
+    BYTE* begin = baseAddress + entries[i].BeginAddress;
+    BYTE* end = baseAddress + entries[i].EndAddress;
+
+    BYTE* funcSize = entries[i].EndAddress - entries[i].BeginAddress;
+    printf("Begin: %p\tEnd: %p - Size: %lu\n", begin, end, funcSize);
+}
+
+}
 BOOL logo() {
     
     //aunt ansi came to town
@@ -2402,6 +2457,8 @@ BOOL printHelp() {
     printf("\n-- Memory & Data Inspection --\n");
     
     printf("!dump     - Dump a raw address (retry if ERROR_ACCESS_DENIED)\n");
+
+    printf("!func     - List all function boundaries\n");
     
     printf("!mbi      - Get MBI info (only for unprotected processes)\n");
     
@@ -3316,6 +3373,10 @@ BOOL WINAPI debug(LPCVOID param) {
                                         printf("%s ", hooked[i].name);
                                         printf("Function Address: 0x%p]\n", hooked[i].address);
                                         }
+                                    }
+
+                                    else if (mystrcmp(buff, "!func") == 0) {
+                                        getExceptionDir(hProcess);
                                     }
                                     
 
