@@ -1026,82 +1026,6 @@ importDescAddr += sizeof(IMAGE_IMPORT_DESCRIPTOR);
 }
 }
 
-int getExceptionDir(HANDLE hProcess) {
-    BYTE* baseAddress = peb.Base;
-
-if (peb.Base == 0) return 1;
-
-//reading dos header
-IMAGE_DOS_HEADER dh;
-
-if (!ReadProcessMemory(hProcess, baseAddress, &dh, sizeof(IMAGE_DOS_HEADER), NULL)) {
-    printf("error reading memory of process ID\n");
-   return 1;
-}
-
-//checks for a valid PE file
-if (dh.e_magic != IMAGE_DOS_SIGNATURE) {
-    printf("error 3 %lu\n", GetLastError());
-    return 1;
-}
-
-//getting nt headers
-#ifdef _WIN64
-IMAGE_NT_HEADERS64 nt;
-#else
-IMAGE_NT_HEADERS32 nt;
-#endif
-
-if (!ReadProcessMemory(hProcess, (BYTE*)baseAddress + dh.e_lfanew, &nt, sizeof(IMAGE_NT_HEADERS), NULL)) {
-    printf("error reading NT headers from remote process\n");
-    return 1;
-}
-
-//optional headers
-IMAGE_OPTIONAL_HEADER oh;
-if (!ReadProcessMemory(hProcess, (BYTE*)baseAddress + dh.e_lfanew + offsetof(IMAGE_NT_HEADERS, OptionalHeader), 
-                       &oh, sizeof(IMAGE_OPTIONAL_HEADER), NULL)) {
-    printf("Error reading Optional Header\n");
-    return 1;
-}
-
-DWORD rva = oh.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXCEPTION].VirtualAddress;
-DWORD size = oh.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXCEPTION].Size;
-
-_IMAGE_RUNTIME_FUNCTION_ENTRY* entries = malloc(size);
-ReadProcessMemory(hProcess, baseAddress + rva, entries, size, NULL);
-
-for (int i=0; i < size / sizeof(_IMAGE_RUNTIME_FUNCTION_ENTRY); i++) {
-
-    BYTE* begin = baseAddress + entries[i].BeginAddress;
-    BYTE* end = baseAddress + entries[i].EndAddress;
-
-    BYTE* funcSize = entries[i].EndAddress - entries[i].BeginAddress;
-    printf("Begin: %p\tEnd: %p - Size: %lu\n", begin, end, funcSize);
-}
-
-}
-BOOL logo() {
-    
-    //aunt ansi came to town
-        printf("\x1B[2J");
-    
-        printf("\x1B[2;20H");
-        printf("\x1B[37;44m");
-        printf("Debugger By Sleepy:\n                            v1.1.1\n");
-    
-        printf("\x1B[4;1H");
-
-        for (int i = 0; i < 100; i++) {
-            printf("+");
-        }
-        
-        puts("\n");
-        printf("\x1B[0m");
-        
-        return 0;
-    }
-
 // Reading Raw address and parsing the data
 BOOL readRawAddr(HANDLE hProcess, LPVOID base, SIZE_T bytesToRead) {
 
@@ -1157,6 +1081,81 @@ BOOL readRawAddr(HANDLE hProcess, LPVOID base, SIZE_T bytesToRead) {
     //free(buff); // Free allocated memory
     return TRUE;
 }
+
+int getExceptionDir(HANDLE hProcess, int doDisasm) {
+    BYTE* baseAddress = peb.Base;
+
+if (peb.Base == 0) return 1;
+
+//reading dos header
+IMAGE_DOS_HEADER dh;
+
+if (!ReadProcessMemory(hProcess, baseAddress, &dh, sizeof(IMAGE_DOS_HEADER), NULL)) {
+    printf("error reading memory of process ID\n");
+   return 1;
+}
+
+//checks for a valid PE file
+if (dh.e_magic != IMAGE_DOS_SIGNATURE) return 1;
+
+//getting nt headers
+IMAGE_NT_HEADERS64 nt;
+if (!ReadProcessMemory(hProcess, (BYTE*)baseAddress + dh.e_lfanew, &nt, sizeof(IMAGE_NT_HEADERS), NULL)) {
+    printf("error reading NT headers from remote process\n");
+    return 1;
+}
+
+//optional headers
+IMAGE_OPTIONAL_HEADER oh;
+if (!ReadProcessMemory(hProcess, (BYTE*)baseAddress + dh.e_lfanew + offsetof(IMAGE_NT_HEADERS, OptionalHeader), &oh, sizeof(IMAGE_OPTIONAL_HEADER), NULL)) {
+    printf("Error reading Optional Header\n");
+    return 1;
+}
+
+DWORD rva = oh.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXCEPTION].VirtualAddress;
+DWORD size = oh.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXCEPTION].Size;
+
+_IMAGE_RUNTIME_FUNCTION_ENTRY* entries = malloc(size);
+ReadProcessMemory(hProcess, baseAddress + rva, entries, size, NULL);
+
+for (int i=0; i < size / sizeof(_IMAGE_RUNTIME_FUNCTION_ENTRY); i++) {
+
+    BYTE* begin = baseAddress + entries[i].BeginAddress;
+    BYTE* end = baseAddress + entries[i].EndAddress;
+
+    BYTE* funcSize = entries[i].EndAddress - entries[i].BeginAddress;
+    printf("Begin: %p\tEnd: %p - Size: %lu\n", begin, end, funcSize);
+
+    if (doDisasm == 1) {
+        //if (begin[0] != 0x48) continue;                 // continue if not x64 code
+        readRawAddr(hProcess, begin, funcSize);
+        puts("Press Enter to move to next function\n");
+        getchar();
+    }
+}
+
+}
+BOOL logo() {
+    
+    //aunt ansi came to town
+        printf("\x1B[2J");
+    
+        printf("\x1B[2;20H");
+        printf("\x1B[37;44m");
+        printf("Debugger By Sleepy:\n                            v1.1.1\n");
+    
+        printf("\x1B[4;1H");
+
+        for (int i = 0; i < 100; i++) {
+            printf("+");
+        }
+        
+        puts("\n");
+        printf("\x1B[0m");
+        
+        return 0;
+    }
+
 
 // Getting Context of the desired thread ID
 BOOL getThreads(DWORD *threadId) {
@@ -3376,7 +3375,11 @@ BOOL WINAPI debug(LPCVOID param) {
                                     }
 
                                     else if (mystrcmp(buff, "!func") == 0) {
-                                        getExceptionDir(hProcess);
+                                        getExceptionDir(hProcess, 0);
+                                    }
+
+                                    else if (mystrcmp(buff, "!disasm") == 0) {
+                                        getExceptionDir(hProcess, 1);
                                     }
                                     
 
