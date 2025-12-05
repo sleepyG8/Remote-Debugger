@@ -32,6 +32,10 @@
 
 `!wor`       - walker object ranger
 
+`!func`      - Dump function boundaries
+
+`!disasm`    - Disasm engine
+
 `!Inject`    - Inject an extension DLL (requires DebuggerInjector.exe)
 
 ## -- Process & System Info --
