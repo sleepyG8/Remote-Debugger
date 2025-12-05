@@ -1082,8 +1082,19 @@ BOOL readRawAddr(HANDLE hProcess, LPVOID base, SIZE_T bytesToRead) {
     return TRUE;
 }
 
+typedef struct {
+    BYTE* begin;
+    BYTE* end;
+    DWORD size;
+    DWORD num;
+    BYTE firstByte;
+} function;
+
+function* functions;
+DWORD allocSize = 0;
 int getExceptionDir(HANDLE hProcess, int doDisasm) {
-    BYTE* baseAddress = peb.Base;
+    
+BYTE* baseAddress = peb.Base;
 
 if (peb.Base == 0) return 1;
 
@@ -1118,22 +1129,32 @@ DWORD size = oh.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXCEPTION].Size;
 _IMAGE_RUNTIME_FUNCTION_ENTRY* entries = malloc(size);
 ReadProcessMemory(hProcess, baseAddress + rva, entries, size, NULL);
 
-for (int i=0; i < size / sizeof(_IMAGE_RUNTIME_FUNCTION_ENTRY); i++) {
+
+// Fill struct
+allocSize = size / sizeof(_IMAGE_RUNTIME_FUNCTION_ENTRY);
+functions = malloc(allocSize * sizeof(function));
+
+
+for (DWORD i=0; i < size / sizeof(_IMAGE_RUNTIME_FUNCTION_ENTRY); i++) {
 
     BYTE* begin = baseAddress + entries[i].BeginAddress;
     BYTE* end = baseAddress + entries[i].EndAddress;
 
     BYTE* funcSize = entries[i].EndAddress - entries[i].BeginAddress;
-    printf("Begin: %p\tEnd: %p - Size: %lu\n", begin, end, funcSize);
 
-    if (doDisasm == 1) {
-        //if (begin[0] != 0x48) continue;                 // continue if not x64 code
-        readRawAddr(hProcess, begin, funcSize);
-        puts("Press Enter to move to next function\n");
-        getchar();
-    }
+    functions[i].begin = begin;
+    functions[i].end = end;
+    functions[i].num = i;
+    functions[i].size = funcSize;
+
+    BYTE check;
+    ReadProcessMemory(hProcess, begin, &check, sizeof(BYTE), NULL);
+
+    functions[i].firstByte = check;
+
 }
 
+return 0;
 }
 BOOL logo() {
     
@@ -2772,6 +2793,7 @@ BOOL writeMem(HANDLE hProcess, void* address, BYTE* data, int size) {
 
 }
 
+
 BOOL staticDisasm(char* buff, char* intbuff) {
 
     typedef int(__stdcall* pDisasm)(int argc, char* argv[]);
@@ -2873,6 +2895,9 @@ BOOL WINAPI debug(LPCVOID param) {
 
             // Loading the Import struct
             getRemoteImports(hProcess, NULL, 0);
+
+            // Getting function boundaries
+            getExceptionDir(hProcess, 0);
 
             printf("\x1b[92m[+]\x1b[0m Thread address/ID: %lu\n", threadId);
 
@@ -3375,11 +3400,42 @@ BOOL WINAPI debug(LPCVOID param) {
                                     }
 
                                     else if (mystrcmp(buff, "!func") == 0) {
-                                        getExceptionDir(hProcess, 0);
+                                        // Walking custom filled struct
+                                        for (int i=0; i < allocSize; i++) {
+                                            printf("<%lu>: Begin: %p\tEnd: %p - Size: %lu\n", functions[i].num, functions[i].begin, functions[i].end, functions[i].size);
+                                        }
+
                                     }
 
                                     else if (mystrcmp(buff, "!disasm") == 0) {
-                                        getExceptionDir(hProcess, 1);
+                                       
+                                        for (int i=0; i < allocSize; i++) {
+
+                                            printf("<%lu>: Begin: %p\tEnd: %p - Size: %lu\n", functions[i].num, functions[i].begin, functions[i].end, functions[i].size);
+
+                                            if (functions[i].firstByte != 0x48 || functions[i].size < 100) continue;            // continue if not x64 code and filter out filler
+
+                                            readRawAddr(hProcess, functions[i].begin, functions[i].size);
+
+                                            printf("[%lu] <Enter> Move Forward\t<-> Move Back\t<q> End\n", functions[i].num);
+
+                                            allocStdin(AllocatedRegion, offsetHandles + 1000, stdin);
+
+                                            char* breakBuffer = readAlloc(AllocatedRegion, offsetHandles + 1000);
+                                            
+                                            breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
+
+                                            printf("%s\n", breakBuffer);
+
+                                            if (strcmp(breakBuffer, "-") == 0) {
+                                                i -= 2;
+                                            } else if (strcmp(breakBuffer, "q") == 0) {
+                                                break;
+                                            } else continue;
+                                        
+
+                                        }
+
                                     }
                                     
 
