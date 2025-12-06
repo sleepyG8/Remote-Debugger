@@ -76,6 +76,8 @@
 
 `docs`       - Go to documentation online
 
+`!save`      - Save session dump to out.slp file (forensics/offline dump)
+
 `start clip` - Start clipboard shortcut
 
 ============================================
