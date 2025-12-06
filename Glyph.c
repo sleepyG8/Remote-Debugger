@@ -10,6 +10,7 @@
 //add terminate
 
 #define STATUS_SUCCESS ((NTSTATUS)0x00000000L)
+#define STATUS_INFO_LENGTH_MISMATCH ((NTSTATUS)0xC0000004)
 
 #pragma comment(lib, "User32.lib")
 #pragma comment(lib, "Advapi32.lib")
@@ -36,29 +37,7 @@ WCHAR *fullPath;
 
 typedef NTSTATUS (NTAPI* pNtTerminateProcess)(HANDLE, NTSTATUS);
 
-typedef NTSTATUS(NTAPI* pNtQueryInformationProcess)(
-    HANDLE, PROCESSINFOCLASS, PVOID, ULONG, PULONG);
-
-/*BOOL readRdxReg(HANDLE hProcess, CONTEXT context) {
-
-SIZE_T bytesRead;
-BYTE *buffer = (BYTE*)malloc(256 * sizeof(BYTE));
-
-// Assume hProcess is already opened and accessible
-if (ReadProcessMemory(hProcess, (LPCVOID)context.Rdx, &buffer, sizeof(buffer), &bytesRead)) {
-    printf("Data at RCX: ");
-    for (size_t i = 0; i < bytesRead; i++) {
-        printf("%02X ", buffer[i]); // Prints byte values
-    }
-    printf("\n");
-} else {
-    printf("Failed to read memory at RCX. Error: %lu\n", GetLastError());
-    return FALSE;
-}
-
-return TRUE;
-}
-*/
+typedef NTSTATUS(NTAPI* pNtQueryInformationProcess)(HANDLE, PROCESSINFOCLASS, PVOID, ULONG, PULONG);
 
 WCHAR imagePath[MAX_PATH] = {0};
 
@@ -320,12 +299,12 @@ typedef struct _WIN_CERTIFICATE
 
 // storing all imports and its address into a struct
 typedef struct {
-    char name[150];
+    char name[100];
     FARPROC address;
 } Imports;
 
 typedef struct {
-    wchar_t modName[256];
+    wchar_t modName[200];
     FARPROC modAddress;
 } Dlls;
 
@@ -382,6 +361,11 @@ Score += 50;
 else if (mystrcmp(funcName, "CreateRemoteThreadEx") == 0) {
 Score += 50;
 }
+
+else if (mystrcmp(funcName, "VirtualProtect") == 0) {
+Score += 30;
+}
+
 
 return TRUE;
 }
@@ -491,11 +475,29 @@ BYTE* readAlloc(BYTE* remoteMem, int startingOffset) {
 
 }
 
+typedef struct {
+    DWORD size;
+    void* address;
+    char mnum[10];
+    char asm[50];
+} opstr;
+
+typedef struct {
+    BYTE* begin;
+    BYTE* end;
+    DWORD size;
+    DWORD num;
+    BYTE firstByte;
+    opstr* op;
+} function;
+
+function* functions;    // each function has its own struct and opstr embeded struct
+
 // Capstone disasm
-BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address) {
+BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address, int funcNum) {
     csh handle;
     cs_insn *insn;
-    size_t count;
+    size_t count;           // opstr count from capstone
 
     // Initialize Capstone
     if (cs_open(CS_ARCH_X86, CS_MODE_64, &handle) != CS_ERR_OK) {
@@ -505,6 +507,7 @@ BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address) {
 
     // Disassemble
     count = cs_disasm(handle, code, size, address, 0, &insn);
+    functions[funcNum].op = malloc(count * sizeof(opstr));                              // for each function malloc each opstr count
     if (count > 0) {
 
         int numofInstructions = 0;
@@ -530,42 +533,7 @@ BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address) {
                     if (!ReadProcessMemory(hProcess, finalAddress, &finalComputedAddress, 8, NULL)) {
                         printf("Error reading %lu\n", GetLastError());
                     }
-                    
-                   // if (didntPrintf == 0 && finalComputedAddress != 0) {
-                     //   printf("\x1b[32mFunction Address:\x1b[0m %llX\n", finalComputedAddress);
-                       // didntPrintf = 1;
-                    //}
-
-                   // uint64_t addrStr[32];
-                   //sprintf(addrStr, "0x%"PRIx64, (uint64_t)imports[k].address);
-
-                    //printf("Final: %llX - %llX\n", finalAddress, (uint64_t)imports[k].address);
-                    // int currentOffset = k * 100;
-                    // BYTE* import = readAlloc(AllocatedRegion, 300 + currentOffset);
-
-                    // //printf("FOUND: %s\n", (char*)import);
-
-                    // char* result = malloc(100);
-                    // if (!result) return NULL;
-                    // int i = 0;
-
-                    // while (import[i] != '-' && import[i] != '\0' && i < 100) {
-                    //     i++; // skip until we find '-'
-                    // }
-
-                    // if (import[i] == '-') {
-                    //     i++; // skip the '-' itself
-                    // }
-
-                    // int j = 0;
-                    // while (import[i] != '\0' && j < 99) {
-                    //     result[j++] = import[i++];
-                    // }
-                    // result[j] = '\0';
-
-                    // uint64_t addr = *(uint64_t*)result;
-
-                    //printf("%s\n", result);
+        
 
                     if (finalComputedAddress == (uint64_t)(uintptr_t)imports[k].address) {
                     
@@ -614,6 +582,15 @@ BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address) {
 
             printf("0x%"PRIx64":\t%s\t%s\n", insn[i].address, insn[i].mnemonic, insn[i].op_str, insn[i].bytes);
 
+            functions[funcNum].op[i].size = strlen(insn[i].op_str);
+            strcpy(functions[funcNum].op[i].asm, insn[i].op_str);
+            strcpy(functions[funcNum].op[i].mnum, insn[i].mnemonic);
+            
+
+            functions[funcNum].op[i].address = insn[i].address;
+
+            //printf("%p\t%s\t%s\n", functions[funcNum].op[i].address, functions[funcNum].op[i].mnum, functions[funcNum].op[i].asm);
+
                 if (mystrcmp(insn[i].mnemonic, "call") == 0) {
                 puts("\n+++++++CALL-TRACE+++++++++");
                 unsigned char bytes[100];
@@ -655,6 +632,7 @@ BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address) {
     return 0;
 }
 
+// Kuser
 BOOL getSystemInfo() {
     KUSER_SHARED_DATA* sharedData = (KUSER_SHARED_DATA*)(0x7FFE0000);
     KSYSTEM_TIME systemTime = sharedData->SystemTime;
@@ -794,6 +772,7 @@ void addModule(wchar_t* funcName, FARPROC addr) {
     countModules++;
 }
 
+// Listing all running proc
 BOOL listModules() {
     for (int i=0; i < countModules; i++) {
 
@@ -1027,7 +1006,7 @@ importDescAddr += sizeof(IMAGE_IMPORT_DESCRIPTOR);
 }
 
 // Reading Raw address and parsing the data
-BOOL readRawAddr(HANDLE hProcess, LPVOID base, SIZE_T bytesToRead) {
+BOOL readRawAddr(HANDLE hProcess, LPVOID base, SIZE_T bytesToRead, int funcNum) {
 
     BYTE *buff = (BYTE*)malloc(bytesToRead);
     if (!buff) {
@@ -1077,21 +1056,14 @@ BOOL readRawAddr(HANDLE hProcess, LPVOID base, SIZE_T bytesToRead) {
     // capstone
     puts("\n------\x1b[92m[+]Dissassembly:\x1b[0m------");
 
-    disasm(hProcess, buff, bytesToRead, base);
+    disasm(hProcess, buff, bytesToRead, base, funcNum);
     //free(buff); // Free allocated memory
     return TRUE;
 }
 
-typedef struct {
-    BYTE* begin;
-    BYTE* end;
-    DWORD size;
-    DWORD num;
-    BYTE firstByte;
-} function;
 
-function* functions;
-DWORD allocSize = 0;
+DWORD funcCount = 0;
+// Listing function boundaries
 int getExceptionDir(HANDLE hProcess, int doDisasm) {
     
 BYTE* baseAddress = peb.Base;
@@ -1131,8 +1103,8 @@ ReadProcessMemory(hProcess, baseAddress + rva, entries, size, NULL);
 
 
 // Fill struct
-allocSize = size / sizeof(_IMAGE_RUNTIME_FUNCTION_ENTRY);
-functions = malloc(allocSize * sizeof(function));
+funcCount = size / sizeof(_IMAGE_RUNTIME_FUNCTION_ENTRY);
+functions = malloc(funcCount * sizeof(function));
 
 
 for (DWORD i=0; i < size / sizeof(_IMAGE_RUNTIME_FUNCTION_ENTRY); i++) {
@@ -1156,6 +1128,7 @@ for (DWORD i=0; i < size / sizeof(_IMAGE_RUNTIME_FUNCTION_ENTRY); i++) {
 
 return 0;
 }
+
 BOOL logo() {
     
     //aunt ansi came to town
@@ -1495,7 +1468,6 @@ FreeLibrary(hAdvapi32);
 FreeLibrary(hNtDll);
 }
 
-#define STATUS_INFO_LENGTH_MISMATCH ((NTSTATUS)0xC0000004)
 // Listing all processes
 BOOL listProcesses() {
           HMODULE hNtDll = GetModuleHandle("ntdll.dll");
@@ -1607,48 +1579,6 @@ BOOL Getcpuinfo() {
     return TRUE;
 
 }
-
-//setting a breakpoint using the symbol file (I am working on adding normal breaks at addresses next)
-// BOOL setBreakpointatSymbol(HANDLE hProcess, const char* symbol, char* module) {
-//     if (!symbol) return FALSE;
-
-
-    
-//     SymInitialize(hProcess, NULL, TRUE);
-
-//     DWORD64 baseAddr = SymLoadModuleEx(hProcess, NULL, symbol, NULL, 0, 0, NULL, 0);
-// if (!baseAddr) {
-//     printf("Failed to load module %s, error: %lu\n", symbol, GetLastError());
-//     return FALSE;
-// }
-
-//     //printf("data :%s\n", symbol);
-//     SYMBOL_INFO *Symbol = (SYMBOL_INFO*)malloc(sizeof(SYMBOL_INFO) + MAX_SYM_NAME);
-//     ZeroMemory(Symbol, sizeof(SYMBOL_INFO) + MAX_SYM_NAME);
-//     Symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
-//     Symbol->MaxNameLen = MAX_SYM_NAME;
-
-//     if (SymFromName(hProcess, symbol, Symbol)) {
-//         printf("Got symbol\n");
-//     } else {
-//         printf("no symbol file %lu\n", GetLastError());
-//         free(Symbol);
-//         return FALSE;
-//     }
-
-//     DWORD oldProtect;
-//     if (!VirtualProtect(Symbol->Address, 1, PAGE_EXECUTE_READWRITE, &oldProtect)) {
-//         printf("Failed to modify memory protection.\n");
-//         free(Symbol);
-//         return FALSE;
-//     }
-
-//     *(BYTE*)Symbol->Address = 0xCC;  // INT3 Breakpoint
-
-//     VirtualProtect(Symbol->Address, 1, oldProtect, &oldProtect);
-//     free(Symbol);
-//     return TRUE;
-// }
 
 //gets mbi info which is useful for checking protections on a mem region
 //also, I built this for me to test regions while building this debugger
@@ -2618,7 +2548,7 @@ while (1) {
         if (strncmp(clipData, "0x", 2) == 0 && strlen(clipData) < 50) {
         
             printf("Printing from clipboard...\n");
-            readRawAddr(lpParam, addr, 500);
+            readRawAddr(lpParam, addr, 500, 0);
         
         }
                                          
@@ -2793,6 +2723,29 @@ BOOL writeMem(HANDLE hProcess, void* address, BYTE* data, int size) {
 
 }
 
+int Save() {
+    
+    FILE* file = fopen("out.slp", "wb");
+
+    for (int i=0; i < countImport; i++) {
+    fwrite(&imports[i], sizeof(Imports), 1, file);          // Write Imports to file
+    }
+
+    int nextOffset = countImport * sizeof(Imports);         // I need to write filler
+
+    for (int i=0; i < countModules; i++) {
+        fwrite(&modules[i], sizeof(Dlls), 1, file);         // Write Modules to file
+    }
+
+    if (funcCount == 0) return 0;
+
+    puts("Writing available functions\n");
+
+    for (int i=0; i < funcCount; i++) {
+        fwrite(&functions[i], sizeof(function), 1, file);
+    }
+    
+}
 
 BOOL staticDisasm(char* buff, char* intbuff) {
 
@@ -3124,7 +3077,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                         DWORD bytesNum = strtoul(bytes2Read, NULL, 10);
 
                                         // Read Raw function 
-                                        if (!readRawAddr(hProcess, (LPVOID)addr, bytesNum)) {
+                                        if (!readRawAddr(hProcess, (LPVOID)addr, bytesNum, 0)) {
                                         printf("Error invalid address\n");
                                         }
                                         
@@ -3401,7 +3354,7 @@ BOOL WINAPI debug(LPCVOID param) {
 
                                     else if (mystrcmp(buff, "!func") == 0) {
                                         // Walking custom filled struct
-                                        for (int i=0; i < allocSize; i++) {
+                                        for (int i=0; i < funcCount; i++) {
                                             printf("<%lu>: Begin: %p\tEnd: %p - Size: %lu\n", functions[i].num, functions[i].begin, functions[i].end, functions[i].size);
                                         }
 
@@ -3409,13 +3362,13 @@ BOOL WINAPI debug(LPCVOID param) {
 
                                     else if (mystrcmp(buff, "!disasm") == 0) {
                                        
-                                        for (int i=0; i < allocSize; i++) {
+                                        for (int i=0; i < funcCount; i++) {
 
                                             printf("<%lu>: Begin: %p\tEnd: %p - Size: %lu\n", functions[i].num, functions[i].begin, functions[i].end, functions[i].size);
 
                                             if (functions[i].firstByte != 0x48 || functions[i].size < 100) continue;            // continue if not x64 code and filter out filler
 
-                                            readRawAddr(hProcess, functions[i].begin, functions[i].size);
+                                            readRawAddr(hProcess, functions[i].begin, functions[i].size, i);
 
                                             printf("[%lu] <Enter> Move Forward\t<-> Move Back\t<q> End\n", functions[i].num);
 
@@ -3437,6 +3390,10 @@ BOOL WINAPI debug(LPCVOID param) {
                                         }
 
                                     }
+
+                                        else if (mystrcmp(buff, "!save") == 0) {
+                                            Save();
+                                        }
                                     
 
                                      } else {
