@@ -1,0 +1,20 @@
+Sometimes your deep into a debug session and want to save
+your spot. Well its very annoying having to restart the 
+debugger just to read info that you already dumped before. 
+
+I decided to create a !save command.
+
+This command allows you to dump crtical process data into a 
+file named out.slp. This file has a custom format and must be 
+walk with "slpWalker.c".
+
+cl slpWalker.c
+
+Usage: slpWalker.exe out.slp
+
+This .slp file contains Imports, Modules, function data, and disasm.
+
+Keep in mind, This only stores assembly instructions that you have already 
+dumped in Glyph. This data being saved to the file is basically a copy of
+important information from your session.
+
