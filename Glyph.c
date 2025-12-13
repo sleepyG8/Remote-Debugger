@@ -583,12 +583,14 @@ BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address, int func
 
             printf("0x%"PRIx64":\t%s\t%s\n", insn[i].address, insn[i].mnemonic, insn[i].op_str, insn[i].bytes);
 
+            if (count < 79) {   // 80 is max opstr size for saving, I dont want 500mb files lol this keeps it around 30 - 100 mb
             functions[funcNum].op[i].size = strlen(insn[i].op_str);
             strcpy(functions[funcNum].op[i].asm, insn[i].op_str);
             strcpy(functions[funcNum].op[i].mnum, insn[i].mnemonic);
+            functions[funcNum].op[i].address = insn[i].address;
+            }
             
 
-            functions[funcNum].op[i].address = insn[i].address;
 
             //printf("%p\t%s\t%s\n", functions[funcNum].op[i].address, functions[funcNum].op[i].mnum, functions[funcNum].op[i].asm);
 
