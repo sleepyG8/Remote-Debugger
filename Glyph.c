@@ -476,20 +476,21 @@ BYTE* readAlloc(BYTE* remoteMem, int startingOffset) {
 }
 
 typedef struct {
+    uint64_t address;
     DWORD size;
-    void* address;
     char mnum[10];
     char asm[50];
 } opstr;
 
 typedef struct {
-    BYTE* begin;
-    BYTE* end;
-    DWORD size;
+    uint64_t begin;
+    uint64_t end;
+    DWORD size; 
     DWORD num;
     BYTE firstByte;
-    opstr* op;
+    opstr op[80];
 } function;
+
 
 function* functions;    // each function has its own struct and opstr embeded struct
 
@@ -507,7 +508,7 @@ BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address, int func
 
     // Disassemble
     count = cs_disasm(handle, code, size, address, 0, &insn);
-    functions[funcNum].op = malloc(count * sizeof(opstr));                              // for each function malloc each opstr count
+    //functions[funcNum].op = malloc(count * sizeof(opstr));                              // for each function malloc each opstr count
     if (count > 0) {
 
         int numofInstructions = 0;
@@ -2126,6 +2127,52 @@ BOOL getTEBExtention(HANDLE hProcess, HANDLE thread) {
 
 }
 
+BOOL checkFordotNet(void* hProcess) {
+    
+BYTE* baseAddress = peb.Base;
+
+if (peb.Base == 0) return 1;
+
+//reading dos header
+IMAGE_DOS_HEADER dh;
+if (!ReadProcessMemory(hProcess, baseAddress, &dh, sizeof(IMAGE_DOS_HEADER), NULL)) {
+    printf("error reading memory of process ID\n");
+   return 1;
+}
+
+//checks for a valid PE file
+if (dh.e_magic != IMAGE_DOS_SIGNATURE) {
+    return 1;
+}
+
+//getting nt headers
+IMAGE_NT_HEADERS64 nt;
+if (!ReadProcessMemory(hProcess, (BYTE*)baseAddress + dh.e_lfanew, &nt, sizeof(IMAGE_NT_HEADERS), NULL)) {
+    printf("error reading NT headers from remote process\n");
+    return 1;
+}
+
+//optional headers
+IMAGE_OPTIONAL_HEADER oh;
+if (!ReadProcessMemory(hProcess, (BYTE*)baseAddress + dh.e_lfanew + offsetof(IMAGE_NT_HEADERS, OptionalHeader), 
+                       &oh, sizeof(IMAGE_OPTIONAL_HEADER), NULL)) {
+    printf("Error reading Optional Header\n");
+    return 1;
+}
+
+DWORD rva = oh.DataDirectory[14].VirtualAddress;
+DWORD ohSize = oh.DataDirectory[14].Size;
+
+if (rva != 0) {
+    printf("Is a .Net app\tCLR Entry: %p\n", (BYTE*)(baseAddress + rva));
+  } else {
+    printf("Is not a .Net app\n");
+  }
+
+   // Will add clr stuff
+
+}
+
 ///////////////////////////////////////////////////////////////////
 //         Reading elfs from disk using raw parsing              //
 ///////////////////////////////////////////////////////////////////
@@ -2473,6 +2520,8 @@ BOOL printHelp() {
     printf("!ext       - Load extension (DLL)\n");
     
     printf("docs       - Go to documentation online\n");
+
+    printf("!save      - Save debugging session to out.slp\n");
 
     printf("start clip - start clip disasm shortcut\n");
 
@@ -3393,6 +3442,10 @@ BOOL WINAPI debug(LPCVOID param) {
 
                                         else if (mystrcmp(buff, "!save") == 0) {
                                             Save();
+                                        }
+
+                                        else if (mystrcmp(buff, "!net") == 0) {
+                                            checkFordotNet(hProcess);
                                         }
                                     
 
