@@ -2,7 +2,7 @@
 #include <stdio.h>
 
 typedef struct {
-    FARPROC address; 
+    FARPROC address;   // NOT void*
     DWORD size;
     char mnum[10];
     char asm[50];
