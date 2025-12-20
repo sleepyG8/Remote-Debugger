@@ -51,9 +51,9 @@ MYPEB pbi;
 
 #define GDI_BATCH_BUFFER_SIZE 310
 typedef struct _GDI_TEB_BATCH {
-    ULONG Offset;                    
-    ULONG_PTR HDC;                    
-    ULONG Buffer[GDI_BATCH_BUFFER_SIZE];
+    ULONG Offset;                     // Current offset into the buffer
+    ULONG_PTR HDC;                    // Handle to the device context
+    ULONG Buffer[GDI_BATCH_BUFFER_SIZE]; // Batched GDI commands
 } GDI_TEB_BATCH, *PGDI_TEB_BATCH;
 
 typedef struct _TEB_ACTIVE_FRAME {
@@ -67,102 +67,38 @@ typedef struct _TEB_ACTIVE_FRAME_CONTEXT {
     PSTR FrameName;
 } TEB_ACTIVE_FRAME_CONTEXT, *PTEB_ACTIVE_FRAME_CONTEXT;
 
+typedef struct MY_NT_TIB {
+    PVOID ExceptionList;        // 0x00
+    PVOID StackBase;            // 0x08
+    PVOID StackLimit;           // 0x10
+    PVOID SubSystemTib;         // 0x18
+    PVOID FiberData;            // 0x20  (a.k.a. Version on some docs)
+    PVOID ArbitraryUserPointer; // 0x28
+    struct _NT_TIB *Self;       // 0x30  <-- must point to TEB base
+} MYNT_TIB, *MYPNT_TIB;
 
 typedef struct _MYTEB {
-    NT_TIB NtTib;                                
+    MYNT_TIB NtTib;                                // Thread Information Block
     PVOID EnvironmentPointer;
     CLIENT_ID ClientId;
     PVOID ActiveRpcHandle;
     PVOID ThreadLocalStoragePointer;
-    MYPEB ProcessEnvironmentBlock;
-    ULONG LastErrorValue;
-    ULONG CountOfOwnedCriticalSections;
-    PVOID CsrClientThread;
-    PVOID Win32ThreadInfo;
-    ULONG User32Reserved[26];
-    ULONG UserReserved[5];
-    PVOID WOW32Reserved;
-    ULONG CurrentLocale;
-    ULONG FpSoftwareStatusRegister;
-    PVOID SystemReserved1[54];
-    LONG ExceptionCode;
-    PVOID ActivationContextStackPointer;
-    BYTE SpareBytes1[36];
-    ULONG TxFsContext;
-    GDI_TEB_BATCH GdiTebBatch;
-    CLIENT_ID RealClientId;
-    HANDLE GdiCachedProcessHandle;
-    ULONG GdiClientPID;
-    ULONG GdiClientTID;
-    PVOID GdiThreadLocalInfo;
-    ULONG Win32ClientInfo[62];
-    PVOID glDispatchTable[233];
-    ULONG glReserved1[29];
-    PVOID glReserved2;
-    PVOID glSectionInfo;
-    PVOID glSection;
-    PVOID glTable;
-    PVOID glCurrentRC;
-    PVOID glContext;
-    ULONG LastStatusValue;
-    UNICODE_STRING StaticUnicodeString;
-    WCHAR StaticUnicodeBuffer[261];
-    PVOID DeallocationStack;
-    PVOID TlsSlots[64];
-    LIST_ENTRY TlsLinks;
-    PVOID Vdm;
-    PVOID ReservedForNtRpc;
-    PVOID TlsExpansionSlots;
-    PVOID ReservedForOle;
-    ULONG ImpersonationLocale;
-    ULONG IsImpersonating;
-    PVOID NlsCache;
-    PVOID pShimData;
-    ULONG HeapVirtualAffinity;
-    PVOID CurrentTransactionHandle;
-    TEB_ACTIVE_FRAME *ActiveFrame;
-    PVOID FlsData;
-    PVOID PreferredLanguages;
-    PVOID UserPrefLanguages;
-    PVOID MergedPrefLanguages;
-    ULONG MuiImpersonation;
-    USHORT CrossTebFlags;
-    USHORT SameTebFlags;
-    PVOID TxnScopeEnterCallback;
-    PVOID TxnScopeExitCallback;
-    PVOID TxnScopeContext;
-    ULONG LockCount;
-    ULONG SpareUlong0;
-    PVOID ResourceRetValue;
-    PVOID ReservedForWdf;
-    ULONGLONG ReservedForCrt;
-    GUID EffectiveContainerId;
+    LPVOID ProcessEnvironmentBlock;
 } MYTEB, *MYPTEB;
 
-void PrintCommonTEB(MYTEB teb) {
-    printf("TEB base:                  0x%p\n", teb);
+void PrintCommonTEB(MYTEB teb, void* base) {
+    printf("TEB base:                  0x%p\n", base);
     printf("  NtTib.Self:              0x%p\n", teb.NtTib.Self);
     printf("  StackBase:               0x%p\n", teb.NtTib.StackBase);
     printf("  StackLimit:              0x%p\n", teb.NtTib.StackLimit);
     printf("  ClientId.Process:        0x%p\n", teb.ClientId.UniqueProcess);
     printf("  ClientId.Thread:         0x%p\n", teb.ClientId.UniqueThread);
-    printf("  LastErrorValue:          0x%08X\n", teb.LastErrorValue);
-    printf("  TLS Pointer:             0x%p\n", teb.ThreadLocalStoragePointer);
-    printf("  TlsSlots[0]:             0x%p\n", teb.TlsSlots[0]);
-    printf("  TlsSlots[1]:             0x%p\n", teb.TlsSlots[1]);
-    printf("  TlsExpansionSlots:       0x%p\n", teb.TlsExpansionSlots);
-    printf("  PEB:                     0x%p\n", teb.ProcessEnvironmentBlock);
-    printf("  GdiTebBatch.HDC:         0x%p\n", teb.GdiTebBatch.HDC);
-    printf("  GdiTebBatch.Offset:      %lu\n", teb.GdiTebBatch.Offset);
-    printf("  ActiveFrame:             0x%p\n", teb.ActiveFrame);
-    printf("  FlsData:                 0x%p\n", teb.FlsData);
-    printf("  IsImpersonating:         %lu\n", teb.IsImpersonating);
-    printf("  StaticUnicodeString:     %ws\n", teb.StaticUnicodeString.Buffer);
+    printf("  peb:                     0x%p\n", teb.ProcessEnvironmentBlock);
 }
 
 typedef struct _THREAD_BASIC_INFORMATION {
     NTSTATUS ExitStatus;
-    PVOID TebBaseAddress; // ← This is what you want
+    PVOID TebBaseAddress; // the goods
     CLIENT_ID ClientId;
     KAFFINITY AffinityMask;
     KPRIORITY Priority;
@@ -180,7 +116,9 @@ typedef NTSTATUS (NTAPI *NtQueryInformationThread_t)(
 
 __declspec(dllexport) int __stdcall getTEB(HANDLE hProcess, HANDLE thread)  {
 
-   NtQueryInformationThread_t qit = (NtQueryInformationThread_t)GetProcAddress(GetModuleHandle("ntdll.dll"), "NtQueryInformationThread");
+    NtQueryInformationThread_t qit = (NtQueryInformationThread_t)GetProcAddress(GetModuleHandle("ntdll.dll"), "NtQueryInformationThread");
+
+   // MYTEB* teb = (MYTEB*)__readgsqword(0x30);
 
    THREAD_BASIC_INFORMATION tbi;
    
@@ -195,7 +133,9 @@ __declspec(dllexport) int __stdcall getTEB(HANDLE hProcess, HANDLE thread)  {
     printf("Error reading memory %lu\n", GetLastError());
    }
 
-   PrintCommonTEB(teb);
+
+   
+   PrintCommonTEB(teb, tbi.TebBaseAddress);
 
    return 0;
 }
