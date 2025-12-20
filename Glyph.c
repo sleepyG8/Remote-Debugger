@@ -494,6 +494,13 @@ typedef struct {
 
 function* functions;    // each function has its own struct and opstr embeded struct
 
+typedef struct {
+void* start;
+void* end;
+} CodeRegion;
+
+CodeRegion* codeBounds;
+
 // Capstone disasm
 BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address, int funcNum) {
     csh handle;
@@ -514,19 +521,14 @@ BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address, int func
         int numofInstructions = 0;
         for (size_t i = 0; i < count; i++) {
                 int printed = 0;
-                //int didntPrintf = 0;
+                
                 for (int k=0; k < countImport; k++) {
 
-                //printf("%s - %s\n", insn[i].op_str, addrStr);
-
-                if (strstr(insn[i].op_str, "[rip +") != NULL) {
-
+                    if (strstr(insn[i].op_str, "[rip +") != NULL) {
 
                     uint64_t rip = insn[i].address + insn[i].size;
 
                     DWORD64 offset = extract_offset_from_operand(insn[i].op_str);
-
-                    //printf("offset %lu\n", offset);
 
                     uint64_t finalAddress = rip + offset;
                             
@@ -1736,18 +1738,9 @@ if (!ReadProcessMemory(hProcess, (BYTE*)peb.Base + dh.e_lfanew, &nt, sizeof(IMAG
 DWORD sectionOffset = dh.e_lfanew + sizeof(IMAGE_NT_HEADERS);
 IMAGE_SECTION_HEADER section;
 
-//good touch
-printf("\x1b[92m[!]\x1b[0m Scanning");
- for (int i=0; i < 3; i++) {
-     printf(".");
-     Sleep(500);
-    }
-    printf("\n");
-
 //looping through
 for (int i=0; i < nt.FileHeader.NumberOfSections; i++) {
-
-    
+ 
 if (!ReadProcessMemory(hProcess, (BYTE*)peb.Base + sectionOffset + (i * sizeof(IMAGE_SECTION_HEADER)), &section, sizeof(IMAGE_SECTION_HEADER), NULL)) {
     printf("Error reading section memory %lu", GetLastError());
     }
@@ -1756,6 +1749,13 @@ if (!ReadProcessMemory(hProcess, (BYTE*)peb.Base + sectionOffset + (i * sizeof(I
 
     BYTE* address = (BYTE*)peb.Base + section.VirtualAddress;
     printf("\x1b[92m[+]\x1b[0m Section: %s | Address: 0x%p | Size: %d\n", section.Name, (void*)address, section.SizeOfRawData);
+
+    if (mystrcmp(section.Name, ".text") == 0) {
+        codeBounds = malloc(sizeof(CodeRegion));
+        codeBounds->start = address;
+        void* end = (unsigned char*)address + section.Misc.VirtualSize;
+        codeBounds->end = end;
+    }
 
     char buffer[0x1000];
     if (!ReadProcessMemory(hProcess, (BYTE*)peb.Base + section.VirtualAddress, &buffer, sizeof(buffer), NULL)) {
@@ -2060,10 +2060,24 @@ while (id->Name != 0) {
 return 0;
 }
 
+
+typedef long (__stdcall *NtQueryObject_t)(
+    void*               Handle,
+    unsigned long       ObjectInformationClass,
+    void*               ObjectInformation,
+    unsigned long       ObjectInformationLength,
+    unsigned long*      ReturnLength
+);
+
+typedef struct {
+    UNICODE_STRING TypeName;
+} OBJECT_TYPE_INFORMATION;
+
 BOOL dumpHandle(ULONG_PTR procNum) {
 
 HANDLE hNtdll = GetModuleHandle("ntdll.dll");
 
+NtQueryObject_t Query = (NtQueryObject_t)GetProcAddress(hNtdll, "NtQueryObject");
 pNtQuerySystemInformation NtQuerySystemInformation = (pNtQuerySystemInformation)GetProcAddress(hNtdll, "NtQuerySystemInformation");
 
 ULONG retlen = 0;
@@ -2093,8 +2107,13 @@ NTSTATUS status = NtQuerySystemInformation(64, NULL, 0, &retlen);
 
      // Compare
     if (procNum == data.UniqueProcessId) {
-         printf("PID: %llu | Handle: 0x%llx | Type: %hu\n", (unsigned long long)data.UniqueProcessId, (unsigned long long)data.HandleValue, data.ObjectTypeIndex);
-         //printf("%lu - %lu\n", i, handles->NumberOfHandles);
+         printf("PID: %llu | Handle: 0x%llX | Type: %hu\n", (unsigned long long)data.UniqueProcessId, (unsigned long long)data.HandleValue, data.ObjectTypeIndex);
+         
+         unsigned char buffer[250];
+         OBJECT_TYPE_INFORMATION* obj = (OBJECT_TYPE_INFORMATION*)buffer;
+         Query(data.HandleValue, ObjectTypeInformation, obj, sizeof(buffer), NULL);
+
+         wprintf(L"%ws\n", obj->TypeName.Buffer);
 
         }
 
@@ -2688,6 +2707,7 @@ typedef struct _VECTXCPT_CALLOUT_ENTRY {
     PVECTORED_EXCEPTION_HANDLER VectoredHandler;
 } VECTXCPT_CALLOUT_ENTRY, *PVECTXCPT_CALLOUT_ENTRY;
 
+
 // Shout out to rad98 - https://github.com/rad9800/misc/blob/main/bypasses/ClearVeh.c
 BOOL getVehTable(HANDLE hProcess, int size2read) {
 
@@ -2732,6 +2752,7 @@ if (!ReadProcessMemory(hProcess, (BYTE*)ntdllBase + sectionOffset + (i * sizeof(
 
     BYTE* address = (BYTE*)ntdllBase + section.VirtualAddress;
     printf("\x1b[92m[+]\x1b[0m Section: %s | Address: 0x%p | Size: %d\n", section.Name, (void*)address, section.SizeOfRawData);
+
 
     LIST_ENTRY buffer;
     if (!ReadProcessMemory(hProcess, (BYTE*)ntdllBase + section.VirtualAddress, &buffer, sizeof(buffer), NULL)) {
@@ -2790,7 +2811,7 @@ int Save() {
 
     if (funcCount == 0) return 0;
 
-    puts("Writing available functions\n");
+    puts("Writing available functions");
 
     for (int i=0; i < funcCount; i++) {
         fwrite(&functions[i], sizeof(function), 1, file);
