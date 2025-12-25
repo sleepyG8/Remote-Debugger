@@ -2795,6 +2795,15 @@ BOOL writeMem(HANDLE hProcess, void* address, BYTE* data, int size) {
 
 }
 
+void* addressMath(void* address1, int num) {
+
+    void* retAddress = (BYTE*)address1 - num;
+
+    return retAddress;
+
+    return 0;
+}
+
 int Save() {
     
     FILE* file = fopen("out.slp", "wb");
@@ -3050,28 +3059,6 @@ BOOL WINAPI debug(LPCVOID param) {
                                     printf("\x1b[92m[+]\x1b[0m VEH: %lu\n", (DWORD)pbi.ProcessUsingVEH);
                                 }
 
-                                // else if (mystrcmp(buff,"!symbreak") == 0) {
-
-                                //     char *breakBuffer = (char*)malloc(100 * sizeof(char));
-                                //     if (!breakBuffer) {
-                                //         printf("Memory allocation error\n");
-                                //     }
-
-                                //     printf("\x1b[92m[-]\x1b[0m Which symbol to break at?\n");
-
-                                //     if  (!fgets(breakBuffer, 99, stdin)) {
-                                //     printf("buffer to large\n");
-                                //     }
-
-                                //     breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
-                                //     // pdb break
-                                //     if (!setBreakpointatSymbol(hProcess, breakBuffer, arg)) {
-                                //         printf("Cannot set breakpoint must be from a .pdb file\n");
-                                //     }
-                                
-                                //     free(breakBuffer);
-                                // }
-                                
                                 // Check memory protections
                                 else if (mystrcmp(buff, "!mbi") == 0) {
 
@@ -3081,8 +3068,7 @@ BOOL WINAPI debug(LPCVOID param) {
 
                                     char* breakBuffer = readAlloc(AllocatedRegion, offsetHandles + 800);
 
-
-                                   // getMBI, region checker
+                                    // getMBI, region checker
                                     breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
                                     if (!getMBI(hProcess, breakBuffer)) {
                                         printf("error");
@@ -3469,6 +3455,27 @@ BOOL WINAPI debug(LPCVOID param) {
 
                                         else if (mystrcmp(buff, "!net") == 0) {
                                             checkFordotNet(hProcess);
+                                        }
+
+                                        else if (mystrcmp(buff, "!sub") == 0) {
+
+                                            printf("\x1b[92m[!]\x1b[0m Address to subtract from?\n");
+                                   
+                                            allocStdin(AllocatedRegion, offsetHandles + 1100, stdin);
+
+                                            char* breakBuffer = readAlloc(AllocatedRegion, offsetHandles + 1100);
+
+                                            breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
+
+                                            LPVOID addr = 0;
+                                            if (sscanf(breakBuffer, "%llx", &addr) != 1 || addr == 0) {
+                                            printf("Error: invalid address '%s'\n", breakBuffer);
+                                            }
+
+                                            void* new = addressMath(addr, 50);
+
+                                            readRawAddr(hProcess, new, 50, 0);
+
                                         }
                                     
 
