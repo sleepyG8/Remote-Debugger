@@ -534,7 +534,8 @@ BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address, int func
                             
                     uint64_t finalComputedAddress = 0;
                     if (!ReadProcessMemory(hProcess, finalAddress, &finalComputedAddress, 8, NULL)) {
-                        printf("Error reading %lu\n", GetLastError());
+                        //printf("Error reading %lu\n", GetLastError());
+                        return 0;
                     }
         
 
@@ -809,9 +810,8 @@ int counthooked = 0;
 
 int breakpointSet = 0;
 // Reading Imported Apis
-int getRemoteImports(HANDLE hProcess, char* breakFunction, BOOL entry) {
+int getRemoteImports(HANDLE hProcess, char* breakFunction, BOOL entry, void* remoteDLL) {
 
-hooked = malloc(50 * sizeof(HookedFunctions));
 // printf("+++++++++++++++++++++++++++++++++++++++++++\n");
 
 // if (breakpointSet == 0) {
@@ -819,9 +819,15 @@ hooked = malloc(50 * sizeof(HookedFunctions));
 // printf("Base: %p\n", (void*)peb.Base);
 // }
 
-
 //getting base address
-BYTE* baseAddress = peb.Base;
+BYTE* baseAddress;
+
+if (remoteDLL) {
+baseAddress = remoteDLL;
+} else {
+baseAddress = peb.Base;
+hooked = malloc(50 * sizeof(HookedFunctions));
+}
 
 if (peb.Base == 0) return 1;
 
@@ -936,7 +942,6 @@ while (TRUE) {
         IMAGE_IMPORT_BY_NAME importByName;
 
         ReadProcessMemory(hProcess, (LPCVOID)((BYTE*)baseAddress + origThunk.u1.AddressOfData), &importByName, sizeof(IMAGE_IMPORT_BY_NAME), NULL);
-            
 
         if (importByName.Name != NULL) {
         FARPROC funcAddr = (FARPROC)thunkData.u1.Function;
@@ -949,10 +954,13 @@ while (TRUE) {
 
         PIMAGE_IMPORT_BY_NAME importByName = (PIMAGE_IMPORT_BY_NAME)importBuffer;
 
-        // if (breakpointSet == 0)  {
-        // printf("+ %s\n", importByName->Name);
-        // printf("Function Address: 0x%p\n", funcAddr);
-        // }
+        if (remoteDLL)  {
+        printf("+ %s\n", importByName->Name);
+        printf("Function Address: 0x%p\n", funcAddr);
+        printf("+++++++++++++++++++++++++++++++++++++\n");
+        }
+
+        if (remoteDLL == 0) {
 
         addImport(importByName->Name, funcAddr);
 
@@ -976,6 +984,8 @@ while (TRUE) {
 
             counthooked++;
         }
+
+    }
 
 
 
@@ -2695,7 +2705,6 @@ if (!ReadProcessMemory(hProcess, (BYTE*)ntdllBase + sectionOffset + (i * sizeof(
 
     printf("\n");
 
-
     }
     
 }
@@ -2928,7 +2937,7 @@ BOOL WINAPI debug(LPCVOID param) {
             GetPEBFromAnotherProcess(hProcess, pi.dwThreadId, pi.dwProcessId);
 
             // Loading the Import struct
-            getRemoteImports(hProcess, NULL, 0);
+            getRemoteImports(hProcess, NULL, 0, 0);
 
             // Getting function boundaries
             getExceptionDir(hProcess, 0);
@@ -2937,7 +2946,7 @@ BOOL WINAPI debug(LPCVOID param) {
 
             // if -b is found set a breakpoint on that import (breakBuff)
             if (breakpointSet) {
-                getRemoteImports(hProcess, breakBuff, 0);
+                getRemoteImports(hProcess, breakBuff, 0, 0);
             }
 
             ////////////////////////////////////////////////////////////////////
@@ -3156,7 +3165,7 @@ BOOL WINAPI debug(LPCVOID param) {
 
                                         breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
 
-                                       if (!getRemoteImports(hProcess, breakBuffer, 0)) {
+                                       if (!getRemoteImports(hProcess, breakBuffer, 0, 0)) {
                                         printf("Error setting the breakpoint at %s\n", breakBuffer);
                                        }
 
@@ -3310,7 +3319,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                     }
 
                                     else if (mystrcmp(buff, "!entry") == 0) {
-                                        getRemoteImports(hProcess, NULL, 1);
+                                        getRemoteImports(hProcess, NULL, 1, 0);
                                     }
 
                                     else if (mystrcmp(buff, "start clip") == 0) {
@@ -3334,6 +3343,10 @@ BOOL WINAPI debug(LPCVOID param) {
                                         void* targetAddress = (void*)strtoull(breakBuffer, NULL, 0);
 
                                         checkRemoteDLL(hProcess, targetAddress, 100);
+
+                                        if (targetAddress) {
+                                            getRemoteImports(hProcess, NULL, 0, targetAddress);
+                                        }
                                     }
 
                                     else if (mystrcmp(buff, "!vehtable") == 0) {
