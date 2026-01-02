@@ -15,6 +15,7 @@ typedef struct {
     DWORD num;
     BYTE firstByte;
     opstr op[80];
+    BYTE type;
 } function;
 
 function* functions;    // each function has its own struct and opstr embeded struct
@@ -64,11 +65,11 @@ int main(int argc, char* argv[]) {
         j++;
     }
 
-    for (int s=0; s < 500; s++) {
+    for (int s=0; s < 500; s++) {       // Increase 
 
         function* functions = slp + ModuleOffset + j * sizeof(Dlls) + s * sizeof(function);
 
-        printf("%lu Begin: %p\t End: %p\n", s, functions->begin, functions->end);
+        printf("%lu Begin: %p\t End: %p\tType: %02X\n", s, functions->begin, functions->end, functions->type);
 
         for (int i=0; i < 80; i++) {
         if (!functions->op[i].address) break;
