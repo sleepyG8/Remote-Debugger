@@ -489,8 +489,9 @@ typedef struct {
     DWORD num;
     BYTE firstByte;
     opstr op[80];
-} function;
+    BYTE type;
 
+} function;
 
 function* functions;    // each function has its own struct and opstr embeded struct
 
@@ -502,7 +503,7 @@ void* end;
 CodeRegion* codeBounds;
 
 // Capstone disasm
-BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address, int funcNum) {
+BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address, int funcNum, int tillRET) {
     csh handle;
     cs_insn *insn;
     size_t count;           // opstr count from capstone
@@ -592,6 +593,13 @@ BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address, int func
             strcpy(functions[funcNum].op[i].mnum, insn[i].mnemonic);
             functions[funcNum].op[i].address = insn[i].address;
             }
+
+            if (mystrcmp(insn[i].mnemonic, "ret") == 0 && tillRET == 1) {
+                printf("found\n");
+                cs_free(insn, count);
+                cs_close(&handle);
+                return 0;
+            }
             
 
 
@@ -629,11 +637,14 @@ BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address, int func
             numofInstructions++;
         }
 
-        cs_free(insn, count);
     } else {
         printf("Failed to disassemble\n");
+        cs_free(insn, count);
+        cs_close(&handle);
+        return 0;
     }
 
+    cs_free(insn, count);
     cs_close(&handle);
     return 0;
 }
@@ -1071,7 +1082,13 @@ BOOL readRawAddr(HANDLE hProcess, LPVOID base, SIZE_T bytesToRead, int funcNum) 
     // capstone
     puts("\n------\x1b[92m[+]Dissassembly:\x1b[0m------");
 
-    disasm(hProcess, buff, bytesToRead, base, funcNum);
+    // read till ret
+    if (bytesToRead == 999) {
+        disasm(hProcess, buff, bytesToRead, base, funcNum, 1);
+        return TRUE;
+    }
+
+    disasm(hProcess, buff, bytesToRead, base, funcNum, 0);
     //free(buff); // Free allocated memory
     return TRUE;
 }
@@ -1139,6 +1156,11 @@ for (DWORD i=0; i < size / sizeof(_IMAGE_RUNTIME_FUNCTION_ENTRY); i++) {
 
     functions[i].firstByte = check;
 
+    BYTE* unwindInfo = baseAddress + entries[i].UnwindInfoAddress;
+    BYTE unwindResult;
+    ReadProcessMemory(hProcess, unwindInfo, &unwindResult, sizeof(BYTE), NULL);
+
+    functions[i].type = unwindResult;
 }
 
 return 0;
@@ -3426,7 +3448,20 @@ BOOL WINAPI debug(LPCVOID param) {
                                     else if (mystrcmp(buff, "!func") == 0) {
                                         // Walking custom filled struct
                                         for (int i=0; i < funcCount; i++) {
-                                            printf("<%lu>: Begin: %p\tEnd: %p - Size: %lu\n", functions[i].num, functions[i].begin, functions[i].end, functions[i].size);
+
+                                            if (functions[i].type == 0x09 || functions[i].type == 0x11) {
+                                                printf("<%lu>: Begin: %p\tEnd: %p - Size: %lu\tSEH: __try / __except\n", functions[i].num, functions[i].begin, functions[i].end, functions[i].size);
+                                                continue;
+                                            }
+
+                                            if (functions[i].type == 0x19) {
+                                                printf("<%lu>: Begin: %p\tEnd: %p - Size: %lu\tSEH: __try / __finally\n", functions[i].num, functions[i].begin, functions[i].end, functions[i].size);
+                                                continue;
+                                            }
+                                            
+                                            
+                                            printf("<%lu>: Begin: %p\tEnd: %p - Size: %lu\tType: %02X\n", functions[i].num, functions[i].begin, functions[i].end, functions[i].size, functions[i].type);
+                                            
                                         }
 
                                     }
