@@ -2650,7 +2650,7 @@ while (1) {
         if (strncmp(clipData, "0x", 2) == 0 && strlen(clipData) < 50) {
         
             printf("Printing from clipboard...\n");
-            readRawAddr(lpParam, addr, 500, 0);
+            readRawAddr(lpParam, addr, 20, 0);
         
         }
                                          
@@ -3446,24 +3446,22 @@ BOOL WINAPI debug(LPCVOID param) {
                                     }
 
                                     else if (mystrcmp(buff, "!func") == 0) {
-                                        // Walking custom filled struct
+                                        
+                                        // Walking custom filled struct and checking type
                                         for (int i=0; i < funcCount; i++) {
 
                                             if (functions[i].type == 0x09 || functions[i].type == 0x11) {
-                                                printf("<%lu>: Begin: %p\tEnd: %p - Size: %lu\tSEH: __try / __except\n", functions[i].num, functions[i].begin, functions[i].end, functions[i].size);
+                                                printf("<%lu>: Begin: 0x%p\tEnd: 0x%p - Size: %lu\tSEH: __try / __except\n", functions[i].num, functions[i].begin, functions[i].end, functions[i].size);
                                                 continue;
                                             }
 
                                             if (functions[i].type == 0x19) {
-                                                printf("<%lu>: Begin: %p\tEnd: %p - Size: %lu\tSEH: __try / __finally\n", functions[i].num, functions[i].begin, functions[i].end, functions[i].size);
+                                                printf("<%lu>: Begin: 0x%p\tEnd: 0x%p - Size: %lu\tSEH: __try / __finally\n", functions[i].num, functions[i].begin, functions[i].end, functions[i].size);
                                                 continue;
                                             }
-                                            
-                                            
-                                            printf("<%lu>: Begin: %p\tEnd: %p - Size: %lu\tType: %02X\n", functions[i].num, functions[i].begin, functions[i].end, functions[i].size, functions[i].type);
-                                            
+                                             
+                                            printf("<%lu>: Begin: 0x%p\tEnd: 0x%p - Size: %lu\tType: %02X\n", functions[i].num, functions[i].begin, functions[i].end, functions[i].size, functions[i].type);   
                                         }
-
                                     }
 
                                     else if (mystrcmp(buff, "!disasm") == 0) {
