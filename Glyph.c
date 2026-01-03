@@ -2508,6 +2508,8 @@ BOOL printHelp() {
     
     printf("!dump     - Dump a raw address (retry if ERROR_ACCESS_DENIED)\n");
 
+    printf("!sub      - Dump bytes before Address (Use for RIP)");
+
     printf("!func     - List all function boundaries\n");
     
     printf("!mbi      - Get MBI info (only for unprotected processes)\n");
@@ -2531,6 +2533,8 @@ BOOL printHelp() {
     printf("!hooked   - View all hooked functions\n");
 
     printf("!static   - Disasm a file from Disk\n");
+
+    printf("!net      - Check for .Net\n");
     
     printf("!Inject   - Inject an extention Dll - Must have the DebuggerInjector.exe\n");
 
@@ -3105,7 +3109,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                         printf("error");
                                     }
 
-                                    free(breakBuffer);
+                                    //free(breakBuffer);
                                 }
 
                                    else if (mystrcmp(buff, "!break") == 0) {
@@ -3124,7 +3128,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                         printf("failed to set breakpoint, protected memory region.\n");
                                     }
 
-                                    free(breakBuffer);
+                                    //free(breakBuffer);
                                 }
                                 
                                 // Get current register state dump
