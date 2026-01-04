@@ -310,7 +310,7 @@ typedef struct {
 
 Imports* imports = NULL;
 size_t countImport = 0;
-
+// using cpuid to pull CPU vendor name
 int getCPUVendor() {
 
     // https://www.felixcloutier.com/x86/cpuid
@@ -336,6 +336,33 @@ int mystrcmp(char* one, char* two) {
         if (one[i] == '\0' || two[i] == '\0') return 0;
 
     }
+    return 0;
+}
+
+int mystrstr(char* buff, char* string, int size) {
+
+    for (int i=0; i < 100; i++) {
+        
+        if ((unsigned char)buff[i] != (unsigned char)string[0]) continue;
+
+        for (int j=0; j < size; j++) {
+        
+        if (j == size) return 1;
+
+        if (string[j + 1] == 0) return 1;
+
+        if ((unsigned char)buff[i + j] != (unsigned char)string[j]) return 0;
+
+        }
+    }
+    return 0;
+}
+
+int writeCon(char* buff) {
+    void* handle = GetStdHandle(-11);
+
+    WriteConsoleA(handle, buff, strlen(buff), 0, 0);
+
     return 0;
 }
 
@@ -385,7 +412,7 @@ DWORD64 extract_offset_from_operand(const char* op_str) {
     return strtoull(temp, NULL, 0);
     }
 
-
+// Unused for now, alloc
 BYTE* makeMem(int size) {
 
     BYTE* remoteMem = VirtualAlloc(NULL, size, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
@@ -510,7 +537,7 @@ BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address, int func
 
     // Initialize Capstone
     if (cs_open(CS_ARCH_X86, CS_MODE_64, &handle) != CS_ERR_OK) {
-        printf("Failed to initialize Capstone\n");
+        writeCon("Failed to initialize Capstone\n");
         return -1;
     }
 
@@ -525,7 +552,7 @@ BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address, int func
                 
                 for (int k=0; k < countImport; k++) {
 
-                    if (strstr(insn[i].op_str, "[rip +") != NULL) {
+                    if (mystrstr(insn[i].op_str, "[rip +", 6) != NULL) {
 
                     uint64_t rip = insn[i].address + insn[i].size;
 
@@ -549,7 +576,7 @@ BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address, int func
                         MalCheck(imports[k].name);
 
                         if (Score > 60) {
-                            printf("Malicous File found!");
+                            writeCon("Malicous File found!\n");
                             getchar();
                         }
 
@@ -564,25 +591,19 @@ BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address, int func
 
             }
 
-                if (strncmp(insn[i].op_str, "0x", 2) == 0) {
+            if (strncmp(insn[i].op_str, "0x", 2) == 0) {
 
                 DWORD64 final = strtoull(insn[i].op_str, NULL, 0);
 
                 //printf("Final: %llX - %llX\n", final, (uint64_t)imports[k].address);
 
-
                 if (final == (uint64_t)(uintptr_t)imports[k].address) {
-                    puts("Import Found\n");
-                    printf("\x1b[32m%s ->\x1b[0m 0x%"PRIx64":\t%s\t%s\n", 
-                    imports[k].name,
-                    (uint64_t)imports[k].address,  
-                    insn[i].mnemonic, 
-                    insn[i].op_str);
+                    writeCon("Import Found\n");
+                    printf("\x1b[32m%s ->\x1b[0m 0x%"PRIx64":\t%s\t%s\n", imports[k].name, (uint64_t)imports[k].address, insn[i].mnemonic, insn[i].op_str);
                     continue;
                 }
 
             }
-
             }
 
             printf("0x%"PRIx64":\t%s\t%s\n", insn[i].address, insn[i].mnemonic, insn[i].op_str, insn[i].bytes);
@@ -606,7 +627,7 @@ BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address, int func
             //printf("%p\t%s\t%s\n", functions[funcNum].op[i].address, functions[funcNum].op[i].mnum, functions[funcNum].op[i].asm);
 
                 if (mystrcmp(insn[i].mnemonic, "call") == 0) {
-                puts("\n+++++++CALL-TRACE+++++++++");
+                writeCon("\n+++++++CALL-TRACE+++++++++\n");
                 unsigned char bytes[100];
                 ReadProcessMemory(hProcess, insn[i].address, &bytes, sizeof(bytes), NULL);
 
@@ -801,7 +822,7 @@ BOOL listModules() {
         }
 
         if (i == countModules) {
-            puts("[END]");
+            writeCon("[END]\n");
         }
 
         printf("+++++++++++++++++++++++++++++++++\n");
@@ -810,16 +831,16 @@ BOOL listModules() {
     return TRUE;
 }
 
-
+// struct for storing hooked functions 
 typedef struct {
     char name[150];
     void* address;
 } HookedFunctions;
 
 HookedFunctions* hooked;
-int counthooked = 0;
+int counthooked = 0;   // Global
 
-int breakpointSet = 0;
+int breakpointSet = 0; // Global
 // Reading Imported Apis
 int getRemoteImports(HANDLE hProcess, char* breakFunction, BOOL entry, void* remoteDLL) {
 
@@ -1073,14 +1094,14 @@ BOOL readRawAddr(HANDLE hProcess, LPVOID base, SIZE_T bytesToRead, int funcNum) 
 
     pCheckEntropy CE = (pCheckEntropy)GetProcAddress(hEdll, "CheckEntropy");
     if (!CE) return 1;
-    puts("\nEntropy Checker Extention:\n-------------------------------");
+    writeCon("\nEntropy Checker Extention:\n-------------------------------\n");
 
     CE(buff, bytesRead);
 
     }
     
     // capstone
-    puts("\n------\x1b[92m[+]Dissassembly:\x1b[0m------");
+    writeCon("\n------\x1b[92m[+]Dissassembly:\x1b[0m------\n");
 
     // read till ret
     if (bytesToRead == 999) {
@@ -1094,7 +1115,7 @@ BOOL readRawAddr(HANDLE hProcess, LPVOID base, SIZE_T bytesToRead, int funcNum) 
 }
 
 
-DWORD funcCount = 0;
+DWORD funcCount = 0;   // Global
 // Listing function boundaries
 int getExceptionDir(HANDLE hProcess, int doDisasm) {
     
@@ -1169,24 +1190,23 @@ return 0;
 BOOL logo() {
     
     //aunt ansi came to town
-        printf("\x1B[2J");
+        writeCon("\x1B[2J");
     
-        printf("\x1B[2;20H");
-        printf("\x1B[37;44m");
-        printf("Debugger By Sleepy:\n                            v1.1.1\n");
+        writeCon("\x1B[2;20H");
+        writeCon("\x1B[37;44m");
+        writeCon("Debugger By Sleepy:\n                            v1.1.1\n");
     
-        printf("\x1B[4;1H");
+        writeCon("\x1B[4;1H");
 
         for (int i = 0; i < 100; i++) {
             printf("+");
         }
         
-        puts("\n");
+        writeCon("\n");
         printf("\x1B[0m");
         
         return 0;
     }
-
 
 // Getting Context of the desired thread ID
 BOOL getThreads(DWORD *threadId) {
@@ -1364,7 +1384,7 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread, DWOR
         // Setting Global struct
         if (wcscmp(myparams.fullPath, name) == 0) {
         //wprintf(L"%ws - %ws\n", myparams.fullPath, name);
-        //puts("hello");
+        //writeCon("hello");
         peb.Base = ldrEntry.DllBase;
         }
 
@@ -1734,6 +1754,7 @@ if (status == STATUS_ACCESS_VIOLATION) {
     return TRUE;
 }
 
+// Get section info of a remote process
 BOOL getVariables(DWORD procId) {
 
 HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, procId);
@@ -1815,6 +1836,7 @@ if (!ReadProcessMemory(hProcess, (BYTE*)peb.Base + sectionOffset + (i * sizeof(I
 return TRUE;
 }
 
+// Load a dll extention
 BOOL Extensions(char* dllName) {
 HANDLE hMod = LoadLibraryA(dllName);
 if (!hMod) return FALSE;
@@ -1823,7 +1845,8 @@ printf("Extension loaded...\n");
 return TRUE;
 } 
 
-DWORD threadid;
+// Get processes by name and return its ID 
+DWORD threadid; // Global
 DWORD GetProc(wchar_t* procName) {
 
     HMODULE hNtDll = GetModuleHandle("ntdll.dll");
@@ -1900,7 +1923,7 @@ int getSignature(wchar_t* readFile) {
 
 FILE* file = _wfopen(readFile, L"rb");
 if (!file) {
-    puts("error\n");
+    writeCon("error\n");
     return 1;
 }
 
@@ -1995,7 +2018,7 @@ if (!id) {
 if (id->GuardFlags != 0) {
     wprintf(L"CFG protections FOUND on - %ws\n", readFile);
     if (id->GuardFlags == 0x00417500) {
-        puts("XFG enabled\n");
+        writeCon("XFG enabled\n");
     }
 } else {
     wprintf(L"*No CFG detected on - [%ws]*\n", readFile);
@@ -2092,6 +2115,8 @@ while (id->Name != 0) {
 return 0;
 }
 
+// Get Handles from remote process
+BOOL dumpHandle(ULONG_PTR procNum) {
 
 typedef long (__stdcall *NtQueryObject_t)(
     void*               Handle,
@@ -2104,8 +2129,6 @@ typedef long (__stdcall *NtQueryObject_t)(
 typedef struct {
     UNICODE_STRING TypeName;
 } OBJECT_TYPE_INFORMATION;
-
-BOOL dumpHandle(ULONG_PTR procNum) {
 
 HANDLE hNtdll = GetModuleHandle("ntdll.dll");
 
@@ -2157,6 +2180,7 @@ NTSTATUS status = NtQuerySystemInformation(64, NULL, 0, &retlen);
     return TRUE;
 }
 
+// Dump teb
 BOOL getTEBExtention(HANDLE hProcess, HANDLE thread) {
 
     typedef int(__stdcall* pGetTeb)(HANDLE, HANDLE);
@@ -2180,6 +2204,7 @@ BOOL getTEBExtention(HANDLE hProcess, HANDLE thread) {
 
 }
 
+// not going to explain this one lol
 BOOL checkFordotNet(void* hProcess) {
     
 BYTE* baseAddress = peb.Base;
@@ -2231,7 +2256,6 @@ if (rva != 0) {
 ///////////////////////////////////////////////////////////////////
 
 // Sleepy 2025
-
 typedef unsigned short      uint16_t;  
 typedef unsigned int        uint32_t;  
 typedef unsigned long long  uint64_t;  
@@ -2285,7 +2309,6 @@ typedef int      Elf64_Sword;  // Signed 32-bit integer
 typedef uint32_t Elf64_Word;   // Unsigned 32-bit integer
 typedef int long long  Elf64_Sxword; // Signed 64-bit integer
 typedef uint64_t Elf64_Xword;  // Unsigned 64-bit integer
-
 
 typedef struct {
     Elf64_Sxword d_tag;     // Dynamic entry type (e.g., DT_SYMTAB, DT_STRTAB)
@@ -2508,7 +2531,7 @@ BOOL printHelp() {
     
     printf("!dump     - Dump a raw address (retry if ERROR_ACCESS_DENIED)\n");
 
-    printf("!sub      - Dump bytes before Address (Use for RIP)");
+    printf("!sub      - Dump bytes before Address (Use for RIP)\n");
 
     printf("!func     - List all function boundaries\n");
     
@@ -2665,7 +2688,6 @@ while (1) {
 }
 }
 
-
 BOOL checkRemoteDLL(HANDLE hProcess, PVOID base, int size2read) {
 
 printf("base: %p\n", ntdllBase);
@@ -2741,7 +2763,6 @@ typedef struct _VECTXCPT_CALLOUT_ENTRY {
     PVOID reserved[2];                       
     PVECTORED_EXCEPTION_HANDLER VectoredHandler;
 } VECTXCPT_CALLOUT_ENTRY, *PVECTXCPT_CALLOUT_ENTRY;
-
 
 // Shout out to rad98 - https://github.com/rad9800/misc/blob/main/bypasses/ClearVeh.c
 BOOL getVehTable(HANDLE hProcess, int size2read) {
@@ -2855,7 +2876,7 @@ int Save() {
 
     if (funcCount == 0) return 0;
 
-    puts("Writing available functions");
+    writeCon("Writing available functions\n");
 
     for (int i=0; i < funcCount; i++) {
         fwrite(&functions[i], sizeof(function), 1, file);
@@ -2889,7 +2910,6 @@ BOOL staticDisasm(char* buff, char* intbuff) {
 
 wchar_t* secondParam = NULL; // argv[2]
 wchar_t* dllChoice; // Only for DLLs
-// Eyes start bleeding now
 
 char *breakBuff;
 BOOL clipSniper = 0;
@@ -2902,10 +2922,7 @@ BOOL WINAPI debug(LPCVOID param) {
     wchar_t *process = arg;
 
     logo();
-
-    // 1 page of mem for chunked bump allocator
     
-
     // ATTACH stuff
     if (wcscmp(process, L"-c") == 0) {
 
@@ -2935,7 +2952,7 @@ BOOL WINAPI debug(LPCVOID param) {
         wprintf(L"\x1b[92m[+]\x1b[0m \033[35mDebugging %ws:\033[0m\n", arg);
 
             } else {
-                puts("Wrong path...");
+                writeCon("Wrong path...\n");
                 return 1;
             }
         }
@@ -2984,7 +3001,7 @@ BOOL WINAPI debug(LPCVOID param) {
                             if (clipSniper == 1) {
                              HANDLE hThread = CreateThread(NULL, 0, clipThread, hProcess, NULL, NULL);
                              if (hThread) {
-                                puts("Clipboard is being sniped for addressess! Anything starting with 0x");
+                                writeCon("Clipboard is being sniped for addressess! Anything starting with 0x\n");
                                 clipSniper = 0;
                                 clipRan = 1;
                              }
@@ -3162,7 +3179,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                         }
 
                                         char bytes2Read[100];
-                                        puts("How many bytes to read?");
+                                        writeCon("How many bytes to read?\n");
                                         fgets(bytes2Read, 99, stdin);
 
                                         bytes2Read[strcspn(bytes2Read, "\n")] = '\0';
@@ -3270,7 +3287,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                         for (int i=0; i < countImport; i++) {
                                             printf("%s - %llX\n", imports[i].name, imports[i].address);
                                         }
-                                        puts("END");
+                                        writeCon("END\n");
                                     }
                                     // get signature of the file
                                     else if (mystrcmp(buff, "!sig") == 0) {
@@ -3300,7 +3317,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                         PROCESS_INFORMATION piO = { 0 };
                                     
                                     
-                                        printf("\x1b[92m[-]\x1b[0m Which path to Load? (Object Directory Ex: \\Device)\n");
+                                        writeCon("\x1b[92m[-]\x1b[0m Which path to Load? (Object Directory Ex: \\Device)\n");
                                    
                                         allocStdin(AllocatedRegion, offsetHandles + 500, stdin);
 
@@ -3312,7 +3329,7 @@ BOOL WINAPI debug(LPCVOID param) {
 
                                         breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
                                         if (!CreateProcessA(NULL, finalbuff, NULL, NULL, 0, CREATE_NEW_CONSOLE, NULL, NULL, &siO, &piO)) {
-                                            printf("Make sure wor.exe is inside of the current Directory, use docs to get it.\n");
+                                            writeCon("Make sure wor.exe is inside of the current Directory, use docs to get it.\n");
                                         }
                                     }
 
@@ -3352,7 +3369,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                         if (clipRan == 0) {
                                             clipSniper = 1;
                                         } else {
-                                            puts("Its already started up...\n");
+                                            writeCon("Its already started up...\n");
                                         }   
                                     }
 
@@ -3393,7 +3410,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                         void* targetAddress = (void*)strtoull(breakBuffer, NULL, 0);
 
                                         BYTE bytes2Write[100];
-                                        puts("what Bytes to write??");
+                                        writeCon("what Bytes to write??\n");
                                         fgets(bytes2Write, 99, stdin);
 
                                         bytes2Write[strcspn(bytes2Write, "\n")] = '\0';
@@ -3464,7 +3481,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                                 continue;
                                             }
                                              
-                                            printf("<%lu>: Begin: 0x%p\tEnd: 0x%p - Size: %lu\tType: %02X\n", functions[i].num, functions[i].begin, functions[i].end, functions[i].size, functions[i].type);   
+                                            printf("<%lu>: Begin: 0x%p\tEnd: 0x%p - Size: %lu\tType: %02X\n", functions[i].num, (void*)functions[i].begin, (void*)functions[i].end, functions[i].size, functions[i].type);   
                                         }
                                     }
 
@@ -3485,8 +3502,6 @@ BOOL WINAPI debug(LPCVOID param) {
                                             char* breakBuffer = readAlloc(AllocatedRegion, offsetHandles + 1000);
                                             
                                             breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
-
-                                            printf("%s\n", breakBuffer);
 
                                             if (strcmp(breakBuffer, "-") == 0) {
                                                 i -= 2;
@@ -3544,7 +3559,7 @@ BOOL WINAPI debug(LPCVOID param) {
 int wmain(int argc, wchar_t* argv[]) {
 
     if (!IsDebuggerPresent) {
-        puts("No debugging the debugger");
+        writeCon("No debugging the debugger\n");
         return 0;
     }
 
@@ -3552,18 +3567,18 @@ int wmain(int argc, wchar_t* argv[]) {
     LPVOID debugFiber = CreateFiber(0, debug, argv[1]);
 
     if (argc < 2) {
-        //puts("\033[35mGlyph - Remote debugger engine by Sleepy\033[0m\n");
+        writeCon("\033[35mGlyph - Remote debugger engine by Sleepy\033[0m\n");
         logo();
-        puts("\x1b[92mUsage:\x1b[0m\n-c <Remote process name> ex. Notepad.exe (ATTACH)\n<path to executable> ex. C:\\Windows\\System32\\notepad.exe start(START)\n-c <process> -b (BREAKPOINT)");
-        puts("-l (LIST)");
-        puts("-open <Path> (optional: -open <Path> -suspended)(start a process)");
-        puts("-c <ProcName> -b (CC Breakpoint, must install a handler)");
+        writeCon("\x1b[92mUsage:\x1b[0m\n-c <Remote process name> ex. Notepad.exe (ATTACH)\n<path to executable> ex. C:\\Windows\\System32\\notepad.exe start(START)\n-c <process> -b (BREAKPOINT)\n");
+        writeCon("-l (LIST)\n");
+        writeCon("-open <Path> (optional: -open <Path> -suspended)(start a process)\n");
+        writeCon("-c <ProcName> -b (CC Breakpoint, must install a handler)\n");
 
-        puts("\n\x1b[92mDLL parsing:\x1b[0m\n-DLL <path to DLL> -imports\n-DLL <path to DLL> -exports");
+        writeCon("\n\x1b[92mDLL parsing:\x1b[0m\n-DLL <path to DLL> -imports\n-DLL <path to DLL> -exports\n");
 
-        puts("\n\x1b[92mELF parsing:\x1b[0m\n-ELF <path to .so>\n");
+        writeCon("\n\x1b[92mELF parsing:\x1b[0m\n-ELF <path to .so>\n");
 
-        puts("run with -help for more help\n");
+        writeCon("run with -help for more help\n");
 
         return 0;
     }
@@ -3575,16 +3590,16 @@ int wmain(int argc, wchar_t* argv[]) {
 
     if (wcscmp(argv[1], L"-help") == 0) {
         logo();
-        puts("\x1b[92mUsage:\x1b[0m\n[+] -c <Remote process name> ex. Notepad.exe (ATTACH)\n[+] <path to executable> ex. C:\\Windows\\System32\\notepad.exe (START)");
-        puts("[+] -l (LIST)");
-        puts("[+] -open <Path> (optional: -open <Path> -suspended)(start a process)");
-        puts("[+] -c <ProcName> -b (CC Breakpoint, must install a handler)");
+        writeCon("\x1b[92mUsage:\x1b[0m\n[+] -c <Remote process name> ex. Notepad.exe (ATTACH)\n[+] <path to executable> ex. C:\\Windows\\System32\\notepad.exe (START)\n");
+        writeCon("[+] -l (LIST)\n");
+        writeCon("[+] -open <Path> (optional: -open <Path> -suspended)(start a process)\n");
+        writeCon("[+] -c <ProcName> -b (CC Breakpoint, must install a handler)\n");
 
-        puts("\n\x1b[92mDLL parsing:\x1b[0m\n[+]-DLL <path to DLL> -imports\n[+] -DLL <path to DLL> -exports");
+        writeCon("\n\x1b[92mDLL parsing:\x1b[0m\n[+]-DLL <path to DLL> -imports\n[+] -DLL <path to DLL> -exports\n");
 
-        puts("\n\x1b[92mELF parsing:\x1b[0m\n[+] -ELF <path to .so>\n");
+        writeCon("\n\x1b[92mELF parsing:\x1b[0m\n[+] -ELF <path to .so>\n");
 
-        puts("\x1b[92mAttached features:\x1b[0m");
+        writeCon("\x1b[92mAttached features:\x1b[0m\n");
         printHelp();
 
         return 0;
@@ -3592,15 +3607,15 @@ int wmain(int argc, wchar_t* argv[]) {
 
     if (wcscmp(argv[1], L"-s") == 0) {
 
-        printf("File scanner - From the Glyph engine\n");
+        writeCon("File scanner - From the Glyph engine\n");
 
-        printf("Which file to scan?\n");                                          
+        writeCon("Which file to scan?\n");                                          
                                         
         char buff[MAX_PATH];                                              
         fgets(buff, sizeof(buff), stdin);                                            
         buff[strcspn(buff, "\n")] = '\0';    
                                             
-        printf("How many bytes to read?\n");
+        writeCon("How many bytes to read?\n");
                                                 
         char intbuff[100];                                                
         fgets(intbuff, sizeof(intbuff), stdin);    
@@ -3620,10 +3635,10 @@ int wmain(int argc, wchar_t* argv[]) {
          STARTUPINFO si = { sizeof(si) };
          PROCESS_INFORMATION pi = { 0 };
         if (!CreateProcessW(argv[2], NULL, NULL, NULL, 0, CREATE_SUSPENDED, NULL, NULL, &si, &pi)) {
-            printf("Error creating process %lu\n", GetLastError());
+            writeCon("Error creating process\n");
             return 1;
         } else {
-            printf("Process created! and suspended, -c <ProcName> to connect");
+            writeCon("Process created! and suspended, -c <ProcName> to connect\n");
             return 0;
         }
 
@@ -3661,7 +3676,7 @@ int wmain(int argc, wchar_t* argv[]) {
 
     if (wcscmp(argv[1], L"-ELF") == 0) {
         if (argc < 3) {
-            printf("Path to .so file\n");
+            writeCon("Path to .so file\n");
         }
         elfWalk(argv[2]);
         return 0;
@@ -3675,7 +3690,7 @@ int wmain(int argc, wchar_t* argv[]) {
         if (wcscmp(argv[1], L"-DLL") == 0) {
 
         if (argc < 4) {
-            puts("-DLL <path to DLL> -imports\n-DLL <path to DLL> -exports");
+            writeCon("-DLL <path to DLL> -imports\n-DLL <path to DLL> -exports\n");
             return 0;
         }
 
