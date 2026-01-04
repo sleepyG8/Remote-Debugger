@@ -21,3 +21,8 @@ If in the debuggers directory it gives a shannon entropy rating 1-8 when !dump i
 ## staticDisasm.dll
 
 Reads a file from disk and disassembles its .text section, run !static
+
+
+## Notes.exe
+
+Notepad for storing anything you want during a debugging session
