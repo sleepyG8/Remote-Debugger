@@ -358,10 +358,16 @@ int mystrstr(char* buff, char* string, int size) {
     return 0;
 }
 
+int mystrlen(char* buff) {
+    for (int i=0; ;i++) {
+    if ((unsigned char)buff[i] == 0x00) return i;
+    }
+}
+
 int writeCon(char* buff) {
     void* handle = GetStdHandle(-11);
 
-    WriteConsoleA(handle, buff, strlen(buff), 0, 0);
+    WriteConsoleA(handle, buff, mystrlen(buff), 0, 0);
 
     return 0;
 }
@@ -423,7 +429,7 @@ BYTE* makeMem(int size) {
 uintptr_t alloc(BYTE* remoteMem, int startingOffset, unsigned char* data) {
 
 
-    int sizeOfData = strlen(data);
+    int sizeOfData = mystrlen((char*)data);
 
     int i;
     for (i=0; i < sizeOfData; i++) {
@@ -448,6 +454,7 @@ int allocStdin(BYTE* remoteMem, int startingOffset, FILE* data) {
     // Cannot overun because 100 input can never overrun the 200 safety gap
     if (startingOffset + 200 >= 0x2000) {
         printf("Buffer is getting full, free is coming soon, restart the app...\n");
+        return 0;
     }
 
     int i = 0;
@@ -609,7 +616,7 @@ BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address, int func
             printf("0x%"PRIx64":\t%s\t%s\n", insn[i].address, insn[i].mnemonic, insn[i].op_str, insn[i].bytes);
 
             if (count < 79) {   // 80 is max opstr size for saving, I dont want 500mb files lol this keeps it around 30 - 100 mb
-            functions[funcNum].op[i].size = strlen(insn[i].op_str);
+            functions[funcNum].op[i].size = mystrlen(insn[i].op_str);
             strcpy(functions[funcNum].op[i].asm, insn[i].op_str);
             strcpy(functions[funcNum].op[i].mnum, insn[i].mnemonic);
             functions[funcNum].op[i].address = insn[i].address;
@@ -643,7 +650,6 @@ BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address, int func
 
                 // printf("newCount: %lu\n", newCount);
                  if (newCount > 0) {
-
                     for (int j=0; j < newCount; j++) {
                     printf(" CALL: 0x%"PRIx64":\t%s\t%s\n", insn2[j].address, insn2[j].mnemonic, insn2[j].op_str, insn2[j].bytes);
                     }
@@ -651,7 +657,7 @@ BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address, int func
             }
 
             if (numofInstructions > 500) {
-                printf("Large Dump Press Enter to Continue...");
+                writeCon("Large Dump Press Enter to Continue...\n");
                 numofInstructions = 0;
                 getchar();
             }
@@ -659,7 +665,7 @@ BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address, int func
         }
 
     } else {
-        printf("Failed to disassemble\n");
+        writeCon("Failed to disassemble\n");
         cs_free(insn, count);
         cs_close(&handle);
         return 0;
@@ -763,7 +769,6 @@ BYTE* VAFromRVA(DWORD rva, PIMAGE_NT_HEADERS nt, BYTE* base) {
     return NULL;
 }
 
-
 size_t capacity = 0;
 // making Dynamic struct for imports
 void addImport(char* funcName, FARPROC addr) {
@@ -843,13 +848,6 @@ int counthooked = 0;   // Global
 int breakpointSet = 0; // Global
 // Reading Imported Apis
 int getRemoteImports(HANDLE hProcess, char* breakFunction, BOOL entry, void* remoteDLL) {
-
-// printf("+++++++++++++++++++++++++++++++++++++++++++\n");
-
-// if (breakpointSet == 0) {
-// printf("Remote Imports:\n");
-// printf("Base: %p\n", (void*)peb.Base);
-// }
 
 //getting base address
 BYTE* baseAddress;
@@ -1056,13 +1054,10 @@ importDescAddr += sizeof(IMAGE_IMPORT_DESCRIPTOR);
 BOOL readRawAddr(HANDLE hProcess, LPVOID base, SIZE_T bytesToRead, int funcNum) {
 
     BYTE *buff = (BYTE*)malloc(bytesToRead);
-    if (!buff) {
-        printf("Memory allocation failed!\n");
-        return FALSE;
-    }
+    if (!buff) return FALSE;
 
-    DWORD bytesRead = 0;
     // Read memory
+    DWORD bytesRead = 0;
     if (ReadProcessMemory(hProcess, base, buff, bytesToRead, &bytesRead)) {
         printf("\x1b[92m[!]\x1b[0m Read Memory - Base: %p\n", base);
     } else {
@@ -1110,7 +1105,6 @@ BOOL readRawAddr(HANDLE hProcess, LPVOID base, SIZE_T bytesToRead, int funcNum) 
     }
 
     disasm(hProcess, buff, bytesToRead, base, funcNum, 0);
-    //free(buff); // Free allocated memory
     return TRUE;
 }
 
@@ -1264,48 +1258,41 @@ BOOL getThreads(DWORD *threadId) {
     }
 
     ResumeThread(hThread);
-
     CloseHandle(hThread);
-
     return TRUE;
 }
 
 PVOID ntdllBase;
 MYPEB pbi;
 WCHAR dllName[MAX_PATH] = {0};
+
 // Peb :)
 BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread, DWORD id) {
-    SuspendThread(thread);
+    
+    SuspendThread(thread); // Need to suspend
+
     HMODULE hNtDll = GetModuleHandle("ntdll.dll");
     if (!hNtDll) {
         printf("Failed to load ntdll.dll\n");
         return FALSE;
     }
 
-    pNtQueryInformationProcess NtQueryInformationProcess =
-        (pNtQueryInformationProcess)GetProcAddress(hNtDll, "NtQueryInformationProcess");
-    if (!NtQueryInformationProcess) {
-        printf("Failed to get NtQueryInformationProcess\n");
-        return FALSE;
-    }
+    pNtQueryInformationProcess NtQueryInformationProcess = (pNtQueryInformationProcess)GetProcAddress(hNtDll, "NtQueryInformationProcess");
+    if (!NtQueryInformationProcess) return FALSE;
 
-    
     PROCESS_BASIC_INFORMATION proc = {0};
 
     ULONG returnlen;
     NTSTATUS status = NtQueryInformationProcess(hProcess, ProcessBasicInformation, &proc, sizeof(PROCESS_BASIC_INFORMATION), &returnlen);
     if (status != 0) {
-        printf("NtQueryInformationProcess failed (Status 0x%08X)\n", status);
         return FALSE;
     }
-    //\033[35mDebugging %s:\033[0m
-    printf("\n\033[35m+-----------Startup-Info-----------+\033[0m\n");
+
+    writeCon("\n\033[35m+-----------Startup-Info-----------+\033[0m\n");
     
-   // printf("PEB Address of the target process: %s\n", proc.PebBaseAddress);
+    // storing global peb address
     peb.pebaddr = proc.PebBaseAddress;
-   
-   //printf("Peb struct address: %p", peb.pebaddr);
-   
+      
     MY_PEB_LDR_DATA ldrData;
     if (ReadProcessMemory(hProcess, proc.PebBaseAddress, &pbi, sizeof(pbi), NULL)) {
         printf("\n\x1b[92m[+]\x1b[0m process ID: %lu\n", (unsigned long)proc.UniqueProcessId);
@@ -1318,7 +1305,8 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread, DWOR
 
    // printf("Parameters: %i\n", pbi.ProcessParameters->CommandLine.Length); this is only for terminal apps
    // printf("Is Protected Process?: %lu\n", pbi.IsProtectedProcess);
-    printf("\x1b[92m[+]\x1b[0m IsBeingDebugged: %i\n", pbi.BeingDebugged);
+    
+   printf("\x1b[92m[+]\x1b[0m IsBeingDebugged: %i\n", pbi.BeingDebugged);
 
     peb.BeingDebugged = pbi.BeingDebugged; //neat
     peb.params = pbi.ProcessParameters; //storing address
@@ -1332,14 +1320,11 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread, DWOR
     if (!ReadProcessMemory(hProcess, pbi.ProcessParameters, &parameters, sizeof(RTL_USER_PROCESS_PARAMETERS), NULL)) {
         printf("error reading params\n");
     } else {
-       // WCHAR imagePath[MAX_PATH] = {0};
         if (!ReadProcessMemory(hProcess, parameters.ImagePathName.Buffer, imagePath, parameters.ImagePathName.Length, NULL)) {
             printf("Error reading ImagePathName buffer\n");
         } else {
             wprintf(L"\x1b[92m[+]\x1b[0m Full Path: %ls\n", imagePath);
             myparams.fullPath = _wcsdup(imagePath);
-            //wprintf(L"%ws\n", myparams.fullPath);
-           // free(myparams.fullPath);
         }
     }
 
@@ -1368,35 +1353,30 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread, DWOR
      LIST_ENTRY* currentEntry = head->Flink;
     
     while (currentEntry != head) {
+        
         DWORD bytes;
         MY_LDR_DATA_TABLE_ENTRY ldrEntry = {0};
         if (!ReadProcessMemory(hProcess, currentEntry, &ldrEntry, sizeof(MY_LDR_DATA_TABLE_ENTRY), &bytes)) {
-            //printf("\x1b[92m[!]\x1b[0m Done\n");
             return FALSE;
         }
 
         WCHAR name[MAX_PATH] = {0};
         if (!ReadProcessMemory(hProcess, ldrEntry.FullDllName.Buffer, &name, ldrEntry.FullDllName.Length, NULL)) {
-            //printf("\x1b[92m[!]\x1b[0m Done\n");
             return FALSE;
         }
 
         // Setting Global struct
         if (wcscmp(myparams.fullPath, name) == 0) {
-        //wprintf(L"%ws - %ws\n", myparams.fullPath, name);
-        //writeCon("hello");
         peb.Base = ldrEntry.DllBase;
         }
 
+        // setting global ntdll
         if (wcscmp(L"C:\\Windows\\SYSTEM32\\ntdll.dll", name) == 0) {
             ntdllBase = ldrEntry.DllBase;
         }
 
         // Patching Infinite loop bug on some Windows versions
         if (ldrEntry.DllBase == 0x0) break;
-
-        //wprintf(L"\x1b[92m[+]\x1b[0m Module: %s\n", name);
-        //printf("\x1b[92m[+]\x1b[0m Base Address: 0x%llX\n", ldrEntry.DllBase);
 
         // Adding to a struct
         addModule(name, ldrEntry.DllBase);
@@ -1880,8 +1860,9 @@ DWORD GetProc(wchar_t* procName) {
         printf("Error 2 0x%X", status);
         return FALSE;
     } 
-int procCount = 0;
-while(info) {
+
+    int procCount = 0;
+    while(info) {
 
     // no "NULL" buffers
     if (info->ImageName.Buffer && info->ImageName.Length > 0) {
@@ -1935,19 +1916,18 @@ fseek(file, 0, SEEK_SET);
 BYTE* buff = malloc(size);
 
 if (!fread(buff, 1, size, file )) {
-    printf("error\n");
+    printf("Failed to read\n");
     return 1;
  }
 
 PIMAGE_DOS_HEADER dh = (PIMAGE_DOS_HEADER)buff;
 if (dh->e_magic != IMAGE_DOS_SIGNATURE) {
-    printf("Invalid PE file\n");
+    printf("Invalid MZ sig\n");
     return 1;
 }
 
 PIMAGE_NT_HEADERS nt = (PIMAGE_NT_HEADERS)((BYTE*)dh + dh->e_lfanew);
 if (nt->Signature != IMAGE_NT_SIGNATURE) {
-    printf("error 2\n");
     return 1;
 }
 
@@ -1955,7 +1935,7 @@ if (nt->Signature != IMAGE_NT_SIGNATURE) {
 PIMAGE_OPTIONAL_HEADER oh = &nt->OptionalHeader;
 
 if (oh->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress == 0) {
-    printf("Does not have any imports.\n");
+    writeCon("Does not have any imports.\n");
     return 1;
 }
 
@@ -1963,7 +1943,7 @@ DWORD secOffset = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_SECURIT
 LPWIN_CERTIFICATE id = (LPWIN_CERTIFICATE)(buff + secOffset);
 
 if (secOffset == 0) {
-    printf("No signature.\n");
+    writeCon("No signature.\n");
     return 1;
 }
 
@@ -2010,8 +1990,8 @@ if (nt->Signature != IMAGE_NT_SIGNATURE) {
 PIMAGE_OPTIONAL_HEADER oh = &nt->OptionalHeader;
 
 PIMAGE_LOAD_CONFIG_DIRECTORY64  id = (PIMAGE_LOAD_CONFIG_DIRECTORY64)VAFromRVA(nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG].VirtualAddress, nt, buff);
+
 if (!id) {
-    printf("error\n");
     return 1;
 }
 
@@ -2431,7 +2411,7 @@ Elf64_Sym* symtab = (Elf64_Sym*)(buff + vaddr_to_offset(symtab_offset, phdr, hdr
 char* strtab = (char*)(buff + vaddr_to_offset(strtab_offset, phdr, hdr->e_phnum));
 
 if (symtab == 0 || strtab == 0) {
-    fprintf(stderr, "Failed to resolve offsets\n");
+    writeCon("Failed to resolve offsets...\n");
     return 1;
 }
 
@@ -2510,102 +2490,102 @@ if (ShellExecuteExW(&sei)) {
 
 BOOL printHelp() {
 
-    printf("\n===== Debugger Usage =====\n");
-    printf("-- Registers & Breakpoints --\n");
+    writeCon("\n===== Debugger Usage =====\n");
+    writeCon("-- Registers & Breakpoints --\n");
                                     
-    printf("!reg      - Print process registers\n");
+    writeCon("!reg      - Print process registers\n");
     
-    printf("!getreg   - Print registers at current memory location\n");
+    writeCon("!getreg   - Print registers at current memory location\n");
     
-    printf("!break    - Set a breakpoint and read registers\n");
+    writeCon("!break    - Set a breakpoint and read registers\n");
     
     //printf("!synbreak - Break at a debug symbol (not stable yet)\n");
 
-    printf("!cc       - int3 break at a function address\n");
+    writeCon("!cc       - int3 break at a function address\n");
 
-    printf("!ccraw    - Break at a supplied address\n");
+    writeCon("!ccraw    - Break at a supplied address\n");
 
-    printf("!write    - Write to a Address ex. CC\n");
+    writeCon("!write    - Write to a Address ex. CC\n");
 
-    printf("\n-- Memory & Data Inspection --\n");
+    writeCon("\n-- Memory & Data Inspection --\n");
     
-    printf("!dump     - Dump a raw address (retry if ERROR_ACCESS_DENIED)\n");
+    writeCon("!dump     - Dump a raw address (retry if ERROR_ACCESS_DENIED)\n");
 
-    printf("!sub      - Dump bytes before Address (Use for RIP)\n");
+    writeCon("!sub      - Dump bytes before Address (Use for RIP)\n");
 
-    printf("!func     - List all function boundaries\n");
+    writeCon("!func     - List all function boundaries\n");
     
-    printf("!mbi      - Get MBI info (only for unprotected processes)\n");
+    writeCon("!mbi      - Get MBI info (only for unprotected processes)\n");
     
-    printf("!bit      - Display Bitfield data - PPL check\n");
+    writeCon("!bit      - Display Bitfield data - PPL check\n");
     
-    printf("!var      - Display section data\n");
+    writeCon("!var      - Display section data\n");
     
-    printf("!veh      - VEH Info\n");
+    writeCon("!veh      - VEH Info\n");
     
-    printf("!imports  - Get Remote Imports\n");
+    writeCon("!imports  - Get Remote Imports\n");
     
-    printf("!entry    - Get entry address\n");
+    writeCon("!entry    - Get entry address\n");
 
-    printf("!vehtable - Read remote VEH table\n");
+    writeCon("!vehtable - Read remote VEH table\n");
 
-    printf("!dllcheck - walk remote dll sections\n");
+    writeCon("!dllcheck - walk remote dll sections\n");
     
-    printf("!wor      - Walker object ranger - Object scanner\n");
+    writeCon("!wor      - Walker object ranger - Object scanner\n");
 
-    printf("!hooked   - View all hooked functions\n");
+    writeCon("!hooked   - View all hooked functions\n");
 
-    printf("!static   - Disasm a file from Disk\n");
+    writeCon("!static   - Disasm a file from Disk\n");
 
-    printf("!net      - Check for .Net\n");
+    writeCon("!net      - Check for .Net\n");
     
-    printf("!Inject   - Inject an extention Dll - Must have the DebuggerInjector.exe\n");
+    writeCon("!Inject   - Inject an extention Dll - Must have the DebuggerInjector.exe\n");
 
-    printf("\n-- Process & System Info --\n");
+    writeCon("\n-- Process & System Info --\n");
     
-    printf("!proc     - Display all running processes\n");
+    writeCon("!proc     - Display all running processes\n");
     
-    printf("!cpu      - Display CPU data per processor\n");
+    writeCon("!cpu      - Display CPU data per processor\n");
     
-    printf("!attr     - Retrieve object attributes\n");
+    writeCon("!attr     - Retrieve object attributes\n");
     
-    printf("!peb      - Display PEB details\n");
+    writeCon("!peb      - Display PEB details\n");
     
-    printf("!params   - Show process parameters (debug status & path)\n");
+    writeCon("!params   - Show process parameters (debug status & path)\n");
     
-    printf("!gsi      - Get System Info\n");
+    writeCon("!gsi      - Get System Info\n");
     
-    printf("!cfg      - Check for CFG\n");
+    writeCon("!cfg      - Check for CFG\n");
     
-    printf("!sig      - Get signature\n");
+    writeCon("!sig      - Get signature\n");
     
-    printf("!pwr      - Check CPU GHz\n");
+    writeCon("!pwr      - Check CPU GHz\n");
     
-    printf("!handles  - Dump Handles\n");
+    writeCon("!handles  - Dump Handles\n");
 
-    printf("!vendor   - Get CPU vendor\n");
+    writeCon("!vendor   - Get CPU vendor\n");
 
-    printf("!dll       - List all loaded modules\n");
+    writeCon("!dll       - List all loaded modules\n");
 
-    printf("\n-- General Commands --\n");
+    writeCon("\n-- General Commands --\n");
     
-    printf("clear      - Clear the console screen\n");
+    writeCon("clear      - Clear the console screen\n");
     
-    printf("exit       - Terminate debugging session\n");
+    writeCon("exit       - Terminate debugging session\n");
     
-    printf("kill       - Close the debugged process\n");
+    writeCon("kill       - Close the debugged process\n");
     
-    printf("help       - Display additional commands\n");
+    writeCon("help       - Display additional commands\n");
     
-    printf("!ext       - Load extension (DLL)\n");
+    writeCon("!ext       - Load extension (DLL)\n");
     
-    printf("docs       - Go to documentation online\n");
+    writeCon("docs       - Go to documentation online\n");
 
-    printf("!save      - Save debugging session to out.slp\n");
+    writeCon("!save      - Save debugging session to out.slp\n");
 
-    printf("start clip - start clip disasm shortcut\n");
+    writeCon("start clip - start clip disasm shortcut\n");
 
-    printf("==============================\n");
+    writeCon("==============================\n");
 }
 
 BOOL samedata = FALSE;
@@ -2674,7 +2654,7 @@ while (1) {
          
         // Address check
         
-        if (strncmp(clipData, "0x", 2) == 0 && strlen(clipData) < 50) {
+        if (strncmp(clipData, "0x", 2) == 0 && mystrlen(clipData) < 50) {
         
             printf("Printing from clipboard...\n");
             readRawAddr(lpParam, addr, 20, 0);
@@ -3415,7 +3395,7 @@ BOOL WINAPI debug(LPCVOID param) {
 
                                         bytes2Write[strcspn(bytes2Write, "\n")] = '\0';
 
-                                        size_t len = strlen(bytes2Write);
+                                        size_t len = mystrlen(bytes2Write);
                                         size_t byteCount = len / 2;
 
                                         // Convert char to actual bytes so basically combining C 3 into C3 thats why / 2
