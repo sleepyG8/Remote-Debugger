@@ -928,10 +928,7 @@ if (id.Name == 0) break;
 
 // Getting import name from id using id.Name
 char* importName[256];
-if (!ReadProcessMemory(hProcess, (BYTE*)baseAddress + id.Name, 
-                       importName, sizeof(importName), NULL)) {
-    return 1;
-}
+if (!ReadProcessMemory(hProcess, (BYTE*)baseAddress + id.Name, importName, sizeof(importName), NULL)) return 1;
 
 // if (breakpointSet == 0) {
 // printf("%s\n", (char*)importName);
@@ -960,7 +957,7 @@ if (!ReadProcessMemory(hProcess, (LPVOID)((BYTE*)thunkAddr), &thunkData, sizeof(
 ///////////////////////////////////////////
 int i = 0;
 while (TRUE) {
-        
+
         // read orig and thunk addr in the loop again to stop infinite loop
         if (!ReadProcessMemory(hProcess, (LPCVOID)origThunkAddr, &origThunk, sizeof(origThunk), NULL) || !ReadProcessMemory(hProcess, (LPCVOID)thunkAddr, &thunkData, sizeof(thunkData), NULL)) {
             printf("error reading thunk\n");
@@ -985,9 +982,17 @@ while (TRUE) {
         PIMAGE_IMPORT_BY_NAME importByName = (PIMAGE_IMPORT_BY_NAME)importBuffer;
 
         if (remoteDLL)  {
-        printf("+ %s\n", importByName->Name);
-        printf("Function Address: 0x%p\n", funcAddr);
-        printf("+++++++++++++++++++++++++++++++++++++\n");
+        if (i == 50) {
+            writeCon("Long list Press Enter...");
+            getchar();
+        }
+        if (i == 0) {
+        printf("Import Name: %s\n", importName);
+        printf("\x1B[32m<%lu>\x1B[0m + %s 0x%p\n", i, importByName->Name, funcAddr);
+        } else {
+        printf("<%lu> + %s 0x%p\n", i, importByName->Name, funcAddr);
+        }
+        writeCon("+++++++++++++++++++++++++++++++++++++\n");
         }
 
         if (remoteDLL == 0) {
