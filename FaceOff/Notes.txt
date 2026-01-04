@@ -1,0 +1,18 @@
+Info about the dbg sessions:
+
+Registry access:
+RegisterEventSourceW
+0x7FF8957BE140 - REGISTRY ACCESS
+RegOpenKeyExW 
+
+Uses VEH
+
+about 450 functions in the main exe
+
+uses the dbgeng dll which querys a lot of proc info, find the dump here!
+
+209 loaded dlls
+
+slack space: 3640
+
+main exes .text is only 91136, meaning it leans on dlls heavy
