@@ -1375,8 +1375,10 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread, DWOR
         peb.Base = ldrEntry.DllBase;
         }
 
+        int sizeofstring = sizeof(ldrEntry.DllBase) - 9;
         // setting global ntdll
-        if (wcscmp(L"C:\\Windows\\SYSTEM32\\ntdll.dll", name) == 0) {
+        if (wcsstr(name, L"ntdll.dll") != 0) {
+            printf("found ntdll\n");
             ntdllBase = ldrEntry.DllBase;
         }
 
@@ -3255,11 +3257,7 @@ BOOL WINAPI debug(LPCVOID param) {
 
                                     breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
 
-                                    if (!Extensions(breakBuffer)) {
-                                        printf("Error loading extension\n");
-                                    }
-
-                                    free(breakBuffer);
+                                    Extensions(breakBuffer);
 
                                     }
                                     // Get info from kuser
