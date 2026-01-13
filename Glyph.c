@@ -1375,7 +1375,6 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread, DWOR
         peb.Base = ldrEntry.DllBase;
         }
 
-        int sizeofstring = sizeof(ldrEntry.DllBase) - 9;
         // setting global ntdll
         if (wcsstr(name, L"ntdll.dll") != 0) {
             printf("found ntdll\n");
@@ -2829,13 +2828,11 @@ if (!ReadProcessMemory(hProcess, (BYTE*)ntdllBase + sectionOffset + (i * sizeof(
 return 0;
 }
 
-BOOL writeMem(HANDLE hProcess, void* address, BYTE* data, int size) {
-
+int writeMem(HANDLE hProcess, void* address, BYTE* data, int size) {
     if (!WriteProcessMemory(hProcess, address, data, size, NULL)) {
         printf("Error writing to process memory at 0x%p: Error %lu\n", address, GetLastError());
     }
-
-
+    return 0;
 }
 
 void* addressMath(void* address1, int num) {
@@ -3523,6 +3520,31 @@ BOOL WINAPI debug(LPCVOID param) {
                                             void* new = addressMath(addr, 50);
 
                                             readRawAddr(hProcess, new, 50, 0);
+
+                                        }
+
+                                        else if (mystrcmp(buff, "!rebuild") == 0) {                     
+                                        STARTUPINFO siO = { sizeof(si) };
+                                        PROCESS_INFORMATION piO = { 0 };            
+                                    
+                                        writeCon("\x1b[92m[-]\x1b[0m Which Address to rebuild into a PE?\n");         
+                                        char breakBuffer[150];
+                                        fgets(breakBuffer, 149, stdin);
+                                        breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
+
+                                        writeCon("\x1b[92m[-]\x1b[0m How many bytes to dump? (Run !func to check)\n");
+                                        char sizeBuff[150];
+                                        fgets(sizeBuff, 149, stdin);
+                                        sizeBuff[strcspn(sizeBuff, "\n")] = '\0';
+
+                                        char finalbuff[100];
+                                        snprintf(finalbuff, 99, "Kratos.exe %lu %s %s", pi.dwProcessId, breakBuffer, sizeBuff);
+
+                                        if (!CreateProcessA(NULL, finalbuff, NULL, NULL, 0, NULL, NULL, NULL, &siO, &piO)) {
+                                            writeCon("Make sure Kratos.exe is inside of the current Directory, use docs to get it.\n");
+                                        } else {
+                                            printf("PE built [pePhile.exe]\n");
+                                        }
 
                                         }
                                     
