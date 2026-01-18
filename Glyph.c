@@ -633,10 +633,15 @@ BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address, int func
 
             //printf("%p\t%s\t%s\n", functions[funcNum].op[i].address, functions[funcNum].op[i].mnum, functions[funcNum].op[i].asm);
 
-                if (mystrcmp(insn[i].mnemonic, "call") == 0) {
+                if (mystrcmp(insn[i].mnemonic, "call") == 0 && insn[i].op_str[0] == '0' && insn[i].op_str[1] == 'x') {
+                
                 writeCon("\n+++++++CALL-TRACE+++++++++\n");
                 unsigned char bytes[100];
-                ReadProcessMemory(hProcess, insn[i].address, &bytes, sizeof(bytes), NULL);
+                ULONGLONG target = 0;
+                if (sscanf(insn[i].op_str, "%llx", &target) != 1 || target == 0) {
+                return FALSE;
+                }
+                ReadProcessMemory(hProcess, target, &bytes, sizeof(bytes), NULL);
 
                 for (int i=0; i < sizeof(bytes); i++){
                     printf("%02X ", bytes[i]);
@@ -646,11 +651,12 @@ BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address, int func
                 printf("\n");
 
                  cs_insn *insn2;
-                 int newCount = cs_disasm(handle, bytes, 100, insn[i].address, 0, &insn2);
+                 int newCount = cs_disasm(handle, bytes, 20, target, 0, &insn2);
 
                 // printf("newCount: %lu\n", newCount);
                  if (newCount > 0) {
                     for (int j=0; j < newCount; j++) {
+                    //printf("%p\n", target);
                     printf(" CALL: 0x%"PRIx64":\t%s\t%s\n", insn2[j].address, insn2[j].mnemonic, insn2[j].op_str, insn2[j].bytes);
                     }
                 }
@@ -1055,6 +1061,103 @@ importDescAddr += sizeof(IMAGE_IMPORT_DESCRIPTOR);
 }
 }
 
+typedef struct {
+    char name[100];
+    void* address;
+} exports;
+
+exports *export;
+
+PVOID ntdllBase;
+DWORD exportcount;
+int getRemoteExports(HANDLE hProcess, void* baseAddress, char* name) {
+//reading dos header
+IMAGE_DOS_HEADER dh;
+if (!ReadProcessMemory(hProcess, baseAddress, &dh, sizeof(IMAGE_DOS_HEADER), NULL)) {
+    printf("error reading memory of process ID\n");
+    return 1;
+}
+
+//checks for a valid PE file
+if (dh.e_magic != IMAGE_DOS_SIGNATURE) {
+    return 1;
+}
+
+IMAGE_NT_HEADERS64 nt;
+if (!ReadProcessMemory(hProcess, (BYTE*)baseAddress + dh.e_lfanew, &nt, sizeof(IMAGE_NT_HEADERS), NULL)) {
+    return 1;
+}
+
+//optional headers
+IMAGE_OPTIONAL_HEADER oh;
+if (!ReadProcessMemory(hProcess, (BYTE*)baseAddress + dh.e_lfanew + offsetof(IMAGE_NT_HEADERS, OptionalHeader), &oh, sizeof(IMAGE_OPTIONAL_HEADER), NULL)) {
+    return 1;
+}
+
+BYTE* importDescAddr = (BYTE*)baseAddress + oh.DataDirectory[0].VirtualAddress;
+
+IMAGE_EXPORT_DIRECTORY id;
+if (!ReadProcessMemory(hProcess, importDescAddr, &id, sizeof(IMAGE_EXPORT_DIRECTORY), NULL)) {
+    printf("error reading the import descriptor\n");
+    return 1;
+}
+
+printf("Walking %s...\n", (BYTE*)baseAddress + id.Name);
+
+exportcount = id.NumberOfNames;
+
+if (exportcount == 0) {
+    printf("No exports but ENTRY is 0x%p\n", (BYTE*)baseAddress + oh.AddressOfEntryPoint);
+    return 0;
+}
+
+DWORD* addressOfNames = (DWORD*)((BYTE*)baseAddress + id.AddressOfNames);
+DWORD* AddressOfFunctions = (DWORD*)((BYTE*)baseAddress + id.AddressOfFunctions);
+WORD* ordinaladdr = (WORD*)((BYTE*)baseAddress + id.AddressOfNameOrdinals);
+
+export = malloc(exportcount * sizeof(exports));
+
+for (int i=0; i < exportcount; i++) {
+    DWORD nameRVA;
+    if (!ReadProcessMemory(hProcess, &addressOfNames[i], &nameRVA, sizeof(DWORD), NULL)) {
+    break;
+    }
+
+    DWORD currentOrdinal;
+    if (!ReadProcessMemory(hProcess, &ordinaladdr[i], &currentOrdinal, sizeof(WORD), NULL)) {
+    puts("ordinal error\n");
+    break;
+    }
+
+    DWORD rva;
+    ReadProcessMemory(hProcess, &AddressOfFunctions[currentOrdinal], &rva, sizeof(DWORD), NULL);
+    
+    strcpy(export[i].name, (char*)((BYTE*)baseAddress + nameRVA)); // Storing into a struct
+    export[i].address = (BYTE*)baseAddress + rva;
+
+    if (mystrcmp(name, "") == 0 || !name) {
+        printf("%s - %p\n", (BYTE*)baseAddress + nameRVA, (BYTE*)baseAddress + rva);
+        if (baseAddress == ntdllBase) {
+        unsigned char syscall;
+        ReadProcessMemory(hProcess, ((BYTE*)baseAddress + rva + 4), &syscall, sizeof(unsigned char), NULL);
+        printf("syscall: %02X\n", syscall);
+        }
+    }
+
+    if (mystrcmp(name, (BYTE*)baseAddress + nameRVA) == 0 || baseAddress != ntdllBase) {
+        printf("%s - %p\n", (BYTE*)baseAddress + nameRVA, (BYTE*)baseAddress + rva);
+        if (baseAddress == ntdllBase) {
+        unsigned char syscall;
+        ReadProcessMemory(hProcess, ((BYTE*)baseAddress + rva + 4), &syscall, sizeof(unsigned char), NULL);
+        printf("syscall: %02X\n", syscall);
+        }
+    }
+
+}
+
+return 0;
+}
+
 // Reading Raw address and parsing the data
 BOOL readRawAddr(HANDLE hProcess, LPVOID base, SIZE_T bytesToRead, int funcNum) {
 
@@ -1267,7 +1370,6 @@ BOOL getThreads(DWORD *threadId) {
     return TRUE;
 }
 
-PVOID ntdllBase;
 MYPEB pbi;
 WCHAR dllName[MAX_PATH] = {0};
 
@@ -2505,8 +2607,6 @@ BOOL printHelp() {
     
     writeCon("!break    - Set a breakpoint and read registers\n");
     
-    //printf("!synbreak - Break at a debug symbol (not stable yet)\n");
-
     writeCon("!cc       - int3 break at a function address\n");
 
     writeCon("!ccraw    - Break at a supplied address\n");
@@ -2516,6 +2616,8 @@ BOOL printHelp() {
     writeCon("\n-- Memory & Data Inspection --\n");
     
     writeCon("!dump     - Dump a raw address (retry if ERROR_ACCESS_DENIED)\n");
+
+    writeCon("!rebuild  - Rebuild memory of an address into a PE (extracting code)\n");
 
     writeCon("!sub      - Dump bytes before Address (Use for RIP)\n");
 
@@ -2535,7 +2637,9 @@ BOOL printHelp() {
 
     writeCon("!vehtable - Read remote VEH table\n");
 
-    writeCon("!dllcheck - walk remote dll sections\n");
+    writeCon("!dllcheck - walk remote DLL sections\n");
+
+    writeCon("!dllexp   - Check remote DLLs exports (Also pulls sycall nums from ntdll)\n");
     
     writeCon("!wor      - Walker object ranger - Object scanner\n");
 
@@ -3547,13 +3651,41 @@ BOOL WINAPI debug(LPCVOID param) {
                                         }
 
                                         }
-                                    
 
-                                     } else {
-                                         printf("run -help- to see the help menu.\n");
+                                        else if (mystrcmp(buff, "!dllexp") == 0) {
+            
+                                            writeCon("Address of modules?\n");
+                                            char address[150];
+                                            fgets(address, 150, stdin);
+                                            address[strcspn(address, "\n")] = '\0';
+
+                                            LPVOID finaladdr = 0;
+                                            if (sscanf(address, "%llx", &finaladdr) != 1 || finaladdr == 0) {
+                                            writeCon("Input an address\n");
+                                            continue;
+                                            }
+
+                                            writeCon("Get a func? OR Press enter to dump all exports\n");
+                                            char func[150];
+                                            fgets(func, 150, stdin);
+                                            func[strcspn(func, "\n")] = '\0'; 
+
+                                            for (int i=0; i < countModules; i++) {                          
+                                            if (i == 0) continue;
+                                            if (modules[i].modAddress != finaladdr) continue;
+                                            getRemoteExports(hProcess, modules[i].modAddress, func);
+                                            }
+
+                                            // for (int j=0; j < exportcount; j++) {
+                                            //     printf("%s\n", export[j].name);
+                                            // }
+
                                         }
-                            }                  
-                        }   
+                                        } else {
+                                         printf("run -help- to see the help menu.\n");
+                                        }                         
+                                    }                  
+                                }   
                                                                  
     WaitForInputIdle(pi.hProcess, INFINITE);
     CloseHandle(pi.hProcess);
