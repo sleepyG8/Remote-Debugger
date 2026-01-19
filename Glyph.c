@@ -1614,17 +1614,13 @@ FreeLibrary(hNtDll);
 }
 
 // Listing all processes
+int wslActive = 1;
 BOOL listProcesses() {
-          HMODULE hNtDll = GetModuleHandle("ntdll.dll");
-    if (!hNtDll) {
-        printf("Failed to load ntdll.dll\n");
-        return FALSE;
-    }
+    
+    HMODULE hNtDll = GetModuleHandle("ntdll.dll");
 
-    pNtQuerySystemInformation NtQuerySystemInformation =
-        (pNtQuerySystemInformation)GetProcAddress(hNtDll, "NtQuerySystemInformation");
+    pNtQuerySystemInformation NtQuerySystemInformation = (pNtQuerySystemInformation)GetProcAddress(hNtDll, "NtQuerySystemInformation");
     if (!NtQuerySystemInformation) {
-        printf("Failed to get NtQueryInformationProcess\n");
         return FALSE;
     }
 
@@ -1635,21 +1631,23 @@ BOOL listProcesses() {
         return FALSE;
     }
 
-        SYSTEM_PROCESS_INFORMATION* info = malloc(returnLen);
-        if (!info) {
-            printf("failed to allocate memory\n");
-        }
+    SYSTEM_PROCESS_INFORMATION* info = malloc(returnLen);
 
-        status = NtQuerySystemInformation(SystemProcessInformation, info, returnLen, &returnLen);
-            if (status != STATUS_SUCCESS) {
+    status = NtQuerySystemInformation(SystemProcessInformation, info, returnLen, &returnLen);
+    if (status != STATUS_SUCCESS) {
         printf("Error 2 0x%X", status);
         return FALSE;
     } 
-int procCount = 0;
-while(info) {
+
+    int procCount = 0;
+
+    while(info) {
 
     wprintf(L"\x1b[92m[+]\x1b[0m Image Name: %ls\n", info->ImageName.Buffer ? info->ImageName.Buffer : L"NULL, no image name\n");
 
+    
+    //    wslActive = 1;  // set true if wsl is found for :wsl
+    
 
     ULONG threadCount = info->NumberOfThreads;
 
@@ -3593,7 +3591,6 @@ BOOL WINAPI debug(LPCVOID param) {
                                                 break;
                                             } else continue;
                                         
-
                                         }
 
                                     }
@@ -3681,7 +3678,68 @@ BOOL WINAPI debug(LPCVOID param) {
                                             // }
 
                                         }
-                                        } else {
+
+                                        else if (mystrcmp(buff, ":wsl") == 0 && wslActive == 1) {
+                                            puts("type exit to go back to debugger");
+                                            for (int i=0;; i++) {
+                                            writeCon("wsl>>");
+                                            char buff[256];
+                                            fgets(buff, 256, stdin);
+                                            buff[strcspn(buff, "\n")] = '\0';
+
+                                            if (mystrcmp(buff, "exit") == 0) {
+                                                break;
+                                            }
+
+                                            char finalbuff[261];
+                                            snprintf(finalbuff, sizeof(finalbuff), "wsl %s\n", buff);
+                                            system(finalbuff);
+                                            }
+
+                                        }
+
+                                        else if (mystrcmp(buff, ":cmd") == 0 && wslActive == 1) {
+                                            puts("type exit to go back to debugger");
+                                            for (int i=0;; i++) {
+                                            writeCon("shell>>");
+                                            char buff[256];
+                                            fgets(buff, 256, stdin);
+
+                                           // printf("%s\n", buff);
+                                            buff[strcspn(buff, "\n")] = '\0';
+
+                                            if (mystrcmp(buff, "exit") == 0) {
+                                                break;
+                                            }
+
+                                            system(buff);
+                                            }
+
+                                        }
+
+                                        else if (strncmp(buff, "0x", 2) == 0) {
+
+                                            void* address = strtoull(buff, 0, 0);
+                                            for (int i=0; i < countImport; i++) {
+                                                if  (imports[i].address == address) {
+                                                    printf("\033[31m[+]\033[0m Import: %s\n", imports[i].name);
+                                                    break;
+                                                }
+                                            }
+                                            for (int i=0; i < countModules; i++) {
+                                                if (modules[i].modAddress == address) {
+                                                    wprintf(L"\033[31m[+]\033[0m Module: %ws\n", modules[i].modName);
+                                                    break;
+                                                }
+                                            }
+
+                                            printf("\033[31m[+]\033[0m DUMP at 0x%p:\n", address);
+                                            readRawAddr(hProcess, address, 20, 0);
+                                            
+                                        }
+                                        
+                                    
+                                    } else {
                                          printf("run -help- to see the help menu.\n");
                                         }                         
                                     }                  
