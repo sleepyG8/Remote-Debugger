@@ -1071,6 +1071,7 @@ exports *export;
 PVOID ntdllBase;
 DWORD exportcount;
 int getRemoteExports(HANDLE hProcess, void* baseAddress, char* name) {
+
 //reading dos header
 IMAGE_DOS_HEADER dh;
 if (!ReadProcessMemory(hProcess, baseAddress, &dh, sizeof(IMAGE_DOS_HEADER), NULL)) {
@@ -1102,12 +1103,13 @@ if (!ReadProcessMemory(hProcess, importDescAddr, &id, sizeof(IMAGE_EXPORT_DIRECT
     return 1;
 }
 
-printf("Walking %s...\n", (BYTE*)baseAddress + id.Name);
+
+printf("Walking %p...\n", (BYTE*)baseAddress + id.Name);
 
 exportcount = id.NumberOfNames;
 
 if (exportcount == 0) {
-    printf("No exports but ENTRY is 0x%p\n", (BYTE*)baseAddress + oh.AddressOfEntryPoint);
+    printf("No exports but ENTRY is 0x%p\n", (void*)((BYTE*)baseAddress + oh.AddressOfEntryPoint));
     return 0;
 }
 
@@ -1118,38 +1120,62 @@ WORD* ordinaladdr = (WORD*)((BYTE*)baseAddress + id.AddressOfNameOrdinals);
 export = malloc(exportcount * sizeof(exports));
 
 for (int i=0; i < exportcount; i++) {
+
     DWORD nameRVA;
     if (!ReadProcessMemory(hProcess, &addressOfNames[i], &nameRVA, sizeof(DWORD), NULL)) {
+    printf("error: %lu", GetLastError());
     break;
     }
 
-    DWORD currentOrdinal;
+    WORD currentOrdinal;
     if (!ReadProcessMemory(hProcess, &ordinaladdr[i], &currentOrdinal, sizeof(WORD), NULL)) {
     puts("ordinal error\n");
     break;
     }
 
     DWORD rva;
-    ReadProcessMemory(hProcess, &AddressOfFunctions[currentOrdinal], &rva, sizeof(DWORD), NULL);
+    if (!ReadProcessMemory(hProcess, &AddressOfFunctions[currentOrdinal], &rva, sizeof(DWORD), NULL)) {
+        printf("rva error %lu\n", GetLastError());
+        break;
+    }
     
-    strcpy(export[i].name, (char*)((BYTE*)baseAddress + nameRVA)); // Storing into a struct
+    char nameBuff[100];
+    ReadProcessMemory(hProcess, (BYTE*)baseAddress + nameRVA, &nameBuff, sizeof(nameBuff), NULL);
+
+    strcpy(export[i].name, nameBuff); // Storing into a struct
     export[i].address = (BYTE*)baseAddress + rva;
 
     if (mystrcmp(name, "") == 0 || !name) {
-        printf("%s - %p\n", (BYTE*)baseAddress + nameRVA, (BYTE*)baseAddress + rva);
-        if (baseAddress == ntdllBase) {
-        unsigned char syscall;
-        ReadProcessMemory(hProcess, ((BYTE*)baseAddress + rva + 4), &syscall, sizeof(unsigned char), NULL);
-        printf("syscall: %02X\n", syscall);
-        }
+        printf("%s - 0x%p\n", nameBuff, (BYTE*)baseAddress + rva);
+        continue;
     }
 
-    if (mystrcmp(name, (BYTE*)baseAddress + nameRVA) == 0 || baseAddress != ntdllBase) {
-        printf("%s - %p\n", (BYTE*)baseAddress + nameRVA, (BYTE*)baseAddress + rva);
+    if (mystrcmp(name, nameBuff) == 0) {
+        printf("%s - %p\n", nameBuff, (BYTE*)baseAddress + rva);
         if (baseAddress == ntdllBase) {
-        unsigned char syscall;
-        ReadProcessMemory(hProcess, ((BYTE*)baseAddress + rva + 4), &syscall, sizeof(unsigned char), NULL);
-        printf("syscall: %02X\n", syscall);
+        unsigned char syscall[20];
+        DWORD returned = 0;
+        if (!ReadProcessMemory(hProcess, (void*)((BYTE*)baseAddress + rva), syscall, 20, &returned)) {
+            printf("Failed to read: Size read <%lu>\n", returned);
+            return 0;
+        }
+        
+        writeCon("Stub: ");
+        for (int i=0; i < 20; i++) {
+        printf("%02X ", syscall[i]);
+        }
+        printf("\nsyscall: %02X\n", syscall[4]);
+        
+        } else {
+            unsigned char outBytes[4096];
+            ReadProcessMemory(hProcess, (void*)((BYTE*)baseAddress + rva), outBytes, 4096, NULL);
+            for (int i=0; i < 4096; i++) {
+                printf("%02X ", outBytes[i]);  
+                if (outBytes[i] == 0xC3) break;
+                if (i == sizeof(outBytes)) break;
+                if ((i+1) % 16 == 0) printf("\n");
+            }
+            printf("\n");
         }
     }
 
@@ -1350,7 +1376,7 @@ BOOL getThreads(DWORD *threadId) {
         printf("R13: 0x%016llX\n", context.R13);
         printf("R14: 0x%016llX\n", context.R14);
         printf("R15: 0x%016llX\n", context.R15);
-
+        
         printf("EFlags: 0x%08X\n", context.EFlags);
 
         printf("CS: 0x%04X\n", context.SegCs);
@@ -1498,11 +1524,8 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread, DWOR
 
 // Getting the security descriptor of a provided handle
 BOOL GetSecurityDescriptor(HANDLE hObject) {
-    HMODULE hAdvapi32 = LoadLibrary("Advapi32.dll");
-if (!hAdvapi32) {
-    printf("Failed to load Advapi32.dll!\n");
-    return FALSE;
-}
+
+HMODULE hAdvapi32 = LoadLibrary("Advapi32.dll");
 
 typedef BOOL (WINAPI *pIsValidSecurityDescriptor)(PSECURITY_DESCRIPTOR);
 pIsValidSecurityDescriptor IsValidSD = (pIsValidSecurityDescriptor)GetProcAddress(hAdvapi32, "IsValidSecurityDescriptor");
@@ -1513,26 +1536,18 @@ if (!IsValidSD) {
     return FALSE;
 }
 
-    typedef NTSTATUS (NTAPI *pZwQuerySecurityObject)(
-        HANDLE, OBJECT_INFORMATION_CLASS, PVOID, ULONG, PULONG
-    );
-
-    //setting dll manually
-    HMODULE hNtDll = LoadLibrary("ntdll.dll");
-    pZwQuerySecurityObject ZwQuerySecurityObject = (pZwQuerySecurityObject)GetProcAddress(hNtDll, "ZwQuerySecurityObject");
-
-
-
+typedef NTSTATUS (NTAPI *pZwQuerySecurityObject)(
+    HANDLE, OBJECT_INFORMATION_CLASS, PVOID, ULONG, PULONG
+);
+//setting dll manually
+HMODULE hNtDll = LoadLibrary("ntdll.dll");
+pZwQuerySecurityObject ZwQuerySecurityObject = (pZwQuerySecurityObject)GetProcAddress(hNtDll, "ZwQuerySecurityObject");
 
 ULONG sdSize = 0;
 //this also sets the size for the psd alloc
 NTSTATUS status = ZwQuerySecurityObject(hObject, OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION, NULL, sdSize, &sdSize);
 
 PSECURITY_DESCRIPTOR pSD = (PSECURITY_DESCRIPTOR)malloc(sdSize);
-if (!pSD) {
-    printf("Memory allocation failed!\n");
-    return FALSE;
-}
 
 status = ZwQuerySecurityObject(hObject, OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION, pSD, sdSize, &sdSize);
 
@@ -2686,6 +2701,10 @@ BOOL printHelp() {
     writeCon("help       - Display additional commands\n");
     
     writeCon("!ext       - Load extension (DLL)\n");
+
+    writeCon(":wsl       - Drop into running wsl cmd line\n");
+
+    writeCon(":cmd       - Drop into cmd.exe\n");
     
     writeCon("docs       - Go to documentation online\n");
 
@@ -3002,45 +3021,31 @@ BOOL clipSniper = 0;
 BOOL clipRan = 0;
 BOOL WINAPI debug(LPCVOID param) {
 
-    wchar_t *arg = (wchar_t*)param;
     STARTUPINFO si = { sizeof(si) };
     PROCESS_INFORMATION pi = { 0 };
-    wchar_t *process = arg;
+    wchar_t *process = param;
 
     logo();
     
     // ATTACH stuff
     if (wcscmp(process, L"-c") == 0) {
+        pi.dwProcessId = GetProc(secondParam);
+        pi.dwThreadId = threadid;
+        if (pi.dwProcessId != 0 && pi.dwThreadId != 0) {
+        wprintf(L"\x1b[92m[+]\x1b[0m \033[35mDebugging %s:\033[0m\n", secondParam);
+        } else {
+        printf("Error Wrong Process Name\n");
+        }
 
-                pi.dwProcessId = GetProc(secondParam);
-                pi.dwThreadId = threadid;
-
-                if (pi.dwProcessId != 0 && pi.dwThreadId != 0) {
-                wprintf(L"\x1b[92m[+]\x1b[0m \033[35mDebugging %s:\033[0m\n", secondParam);
-                } else {
-                    printf("Error Wrong Process Name\n");
-                }
-
-            } else {
-                // START process stuff
-                if (CreateProcessW(
-                    process,
-                    NULL,
-                    NULL,
-                    NULL,
-                    FALSE,
-                    0,
-                    NULL,
-                    NULL,
-                    &si,
-                    &pi)) {
-
-        wprintf(L"\x1b[92m[+]\x1b[0m \033[35mDebugging %ws:\033[0m\n", arg);
-
-            } else {
-                writeCon("Wrong path...\n");
-                return 1;
-            }
+    } else {
+        // START process stuff
+    if (CreateProcessW(process, NULL, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
+        wprintf(L"\x1b[92m[+]\x1b[0m \033[35mDebugging %ws:\033[0m\n", param);
+        } else {
+            writeCon("Wrong path...\n");
+            return 1;
+        }
+        
         }
 
         ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -3084,7 +3089,7 @@ BOOL WINAPI debug(LPCVOID param) {
 
                     while (1) {   
                             
-                            if (clipSniper == 1) {
+                            if (clipSniper == 1) {  // Clip sniper
                              HANDLE hThread = CreateThread(NULL, 0, clipThread, hProcess, NULL, NULL);
                              if (hThread) {
                                 writeCon("Clipboard is being sniped for addressess! Anything starting with 0x\n");
@@ -3093,8 +3098,6 @@ BOOL WINAPI debug(LPCVOID param) {
                              }
 
                             }
-    
-                            
                             printf("\033[35mDebug>>\033[0m");
 
                             // Custom memory allocator
@@ -3115,6 +3118,8 @@ BOOL WINAPI debug(LPCVOID param) {
                                printf("RBX: 0x%016llX\n", context.Rbx);
                                printf("RCX: 0x%016llX\n", context.Rcx);
                                printf("RDX: 0x%016llX\n", context.Rdx);
+                               printf("R8:  0x%016llX\n", context.R8);
+                               printf("R9:  0x%016llX\n", context.R9);
                             }
                             
                            else if (mystrcmp(buff, "!attr") == 0) {
@@ -3146,7 +3151,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                 }
 
                                 else if (mystrcmp(buff, "exit") == 0) {
-                                        pNtTerminateProcess NtTerminateProcess = (pNtTerminateProcess)GetProcAddress(GetModuleHandle("ntdll.dll"), "NtTerminateProcess");
+                                       pNtTerminateProcess NtTerminateProcess = (pNtTerminateProcess)GetProcAddress(GetModuleHandle("ntdll.dll"), "NtTerminateProcess");
                                        if (!NtTerminateProcess) return FALSE;
                                        NTSTATUS status = NtTerminateProcess(NULL, 0);
                                        if (NT_SUCCESS(status)) {
