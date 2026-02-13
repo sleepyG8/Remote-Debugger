@@ -4,6 +4,7 @@
 #include <securitybaseapi.h>
 #include <sddl.h> 
 #include <AclAPI.h>
+#include <iphlpapi.h>
 #include "capstone/capstone.h"
 #include "intrin.h"
 
@@ -12,6 +13,7 @@
 #define STATUS_SUCCESS ((NTSTATUS)0x00000000L)
 #define STATUS_INFO_LENGTH_MISMATCH ((NTSTATUS)0xC0000004)
 
+#pragma comment(lib, "Iphlpapi.lib")
 #pragma comment(lib, "User32.lib")
 #pragma comment(lib, "Advapi32.lib")
 #pragma comment(lib, "Psapi.lib")
@@ -557,6 +559,7 @@ BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address, int func
         for (size_t i = 0; i < count; i++) {
                 int printed = 0;
                 
+                if (insn[i].bytes == 0xC3) break;
                 for (int k=0; k < countImport; k++) {
 
                     if (mystrstr(insn[i].op_str, "[rip +", 6) != NULL) {
@@ -1242,7 +1245,6 @@ BOOL readRawAddr(HANDLE hProcess, LPVOID base, SIZE_T bytesToRead, int funcNum) 
     return TRUE;
 }
 
-
 DWORD funcCount = 0;   // Global
 // Listing function boundaries
 int getExceptionDir(HANDLE hProcess, int doDisasm) {
@@ -1402,7 +1404,7 @@ WCHAR dllName[MAX_PATH] = {0};
 // Peb :)
 BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread, DWORD id) {
     
-    SuspendThread(thread); // Need to suspend
+    //SuspendThread(thread); // Need to suspend
 
     HMODULE hNtDll = GetModuleHandle("ntdll.dll");
     if (!hNtDll) {
@@ -1475,11 +1477,11 @@ BOOL GetPEBFromAnotherProcess(HANDLE hProcess, PROCESS_INFORMATION *thread, DWOR
     WaitForInputIdle(hProcess, 500);
 
     if (!ReadProcessMemory(hProcess, (LPCVOID)pbi.Ldr , &ldrData, sizeof(ldrData), &bytesread)) {
-            printf("error getting ldr, retry...\n");
+            printf("error getting ldr, retry... %lu - %lu\n", GetLastError(), bytesread);
             return FALSE;
     }
     
-        printf("\x1b[92m[+]\x1b[0m LDR Address: 0x%llX\n", ldrData);
+    printf("\x1b[92m[+]\x1b[0m LDR Address: 0x%llX\n", ldrData);
 
        // printf("\n\033[35m+-----------Modules-----------+\033[0m\n");
      LIST_ENTRY* head = &ldrData.InLoadOrderModuleList;
@@ -1622,6 +1624,10 @@ if (!LookupAccountSidA(NULL, psdString, name, &nameLen, domain, &domainLen, &sid
 }
 
 printf("\x1b[92m[+]\x1b[0m NT %s\\%s\\\n", name, domain);
+
+if (mystrcmp(name, "SYSTEM") == 0) {
+    return 2;
+}
 
 return TRUE;
 FreeLibrary(hAdvapi32);
@@ -1948,7 +1954,7 @@ return TRUE;
 
 // Get processes by name and return its ID 
 DWORD threadid; // Global
-DWORD GetProc(wchar_t* procName) {
+DWORD GetProc(wchar_t* procName, DWORD procId) {
 
     HMODULE hNtDll = GetModuleHandle("ntdll.dll");
     if (!hNtDll) {
@@ -1970,16 +1976,15 @@ DWORD GetProc(wchar_t* procName) {
         return FALSE;
     }
 
-    //printf("%lu\n", returnLen);
-        SYSTEM_PROCESS_INFORMATION* info = malloc(returnLen);
-        if (!info) {
-            printf("failed to allocate memory\n");
-        }
+    SYSTEM_PROCESS_INFORMATION* info = malloc(returnLen);
+    if (!info) {
+        printf("failed to allocate memory\n");
+    }
 
-        status = NtQuerySystemInformation(SystemProcessInformation, info, returnLen, &returnLen);
-            if (status != STATUS_SUCCESS) {
-        printf("Error 2 0x%X", status);
-        return FALSE;
+    status = NtQuerySystemInformation(SystemProcessInformation, info, returnLen, &returnLen);
+     if (status != STATUS_SUCCESS) {
+       printf("Error 2 0x%X", status);
+       return FALSE;
     } 
 
     int procCount = 0;
@@ -1987,8 +1992,9 @@ DWORD GetProc(wchar_t* procName) {
 
     // no "NULL" buffers
     if (info->ImageName.Buffer && info->ImageName.Length > 0) {
-        
-    if (wcscmp(info->ImageName.Buffer, procName) == 0) {
+     
+    //// If need procID and threadID from name
+    if (procName != NULL && wcscmp(info->ImageName.Buffer, procName) == 0) {
 
         ULONG threadCount = info->NumberOfThreads;
 
@@ -1996,8 +2002,21 @@ DWORD GetProc(wchar_t* procName) {
         PSYSTEM_THREAD_INFORMATION threads = (PSYSTEM_THREAD_INFORMATION)(info + 1);
 
         threadid = threads[info->NumberOfThreads - 1].ClientId.UniqueThread;
-
+        printf("%lu\n", info->UniqueProcessId);
         return info->UniqueProcessId;
+    }
+
+    //// If need thread Id from procID
+    if (procId != 0 && procName == NULL && procId == info->UniqueProcessId) {
+
+        ULONG threadCount = info->NumberOfThreads;
+        // info + 1 walks from process struct to thread struct
+        PSYSTEM_THREAD_INFORMATION threads = (PSYSTEM_THREAD_INFORMATION)(info + 1);
+
+        threadid = threads[0].ClientId.UniqueThread;
+        //threadid = threads[info->NumberOfThreads - (info->NumberOfThreads - 1)].ClientId.UniqueThread;
+        
+        return 0;
     }
 }
 
@@ -2216,8 +2235,54 @@ while (id->Name != 0) {
 return 0;
 }
 
+// Getting Token Information like SID and groups
+int getTokenInfo(HANDLE newToken) {
+
+typedef struct _TOKEN_GROUPS {
+    DWORD GroupCount;
+    SID_AND_ATTRIBUTES Groups[ANYSIZE_ARRAY];
+} TOKEN_GROUPS, *PTOKEN_GROUPS;
+
+TOKEN_GROUPS* group;
+DWORD size = 0;
+            
+GetTokenInformation(newToken, 2, 0, 0, &size);
+group = (TOKEN_GROUPS*)malloc(size);
+
+if (!GetTokenInformation(newToken, 2, group, size, &size)) {
+    printf("Error %lu\n", GetLastError());
+    return 0;
+}
+
+printf("Group Count: %lu\n", group->GroupCount);
+for (int i=0; i < group->GroupCount; i++) {
+    printf("Attributes: %p\n", group->Groups[i].Attributes);
+
+    LPSTR sidstring;
+    ConvertSidToStringSid(group->Groups[i].Sid, &sidstring);
+
+    if (mystrcmp(sidstring, "S-1-16-16384") == 0) {
+        TOKEN_TYPE type;
+        DWORD size;
+        if (GetTokenInformation(newToken, TokenType, &type, sizeof(type), &size)) {
+            
+            if (type == TokenPrimary) {
+               printf("Token is PRIMARY\n");
+            } else if (type == TokenImpersonation) {
+               printf("Token is IMPERSONATION\n");   
+            }
+
+            printf("SID: %s\n", sidstring);
+
+        }
+    }                   
+}
+return 1;
+}
+
+HANDLE hProcess;
 // Get Handles from remote process
-BOOL dumpHandle(ULONG_PTR procNum) {
+BOOL dumpHandle(ULONG_PTR procNum, void* hProcess) {
 
 typedef long (__stdcall *NtQueryObject_t)(
     void*               Handle,
@@ -2250,7 +2315,7 @@ NTSTATUS status = NtQuerySystemInformation(64, NULL, 0, &retlen);
 
     // loop to get entire retlen becuase handles update a lot
     while (status == STATUS_INFO_LENGTH_MISMATCH) {
-    handles = (SYSTEM_HANDLE_INFORMATION_EX*)malloc(retlen);
+    handles = (SYSTEM_HANDLE_INFORMATION_EX*)malloc(retlen + 1000);
     status = NtQuerySystemInformation(64, handles, retlen, &retlen);
     printf("%lu\n", retlen);
     if (status == STATUS_INFO_LENGTH_MISMATCH) {
@@ -2263,22 +2328,60 @@ NTSTATUS status = NtQuerySystemInformation(64, NULL, 0, &retlen);
 
      // Compare
     if (procNum == data.UniqueProcessId) {
+        
          printf("PID: %llu | Handle: 0x%llX | Type: %hu\n", (unsigned long long)data.UniqueProcessId, (unsigned long long)data.HandleValue, data.ObjectTypeIndex);
          
+         HANDLE local = NULL; 
+         if (!DuplicateHandle(hProcess, (HANDLE)data.HandleValue, GetCurrentProcess(), &local, 0, FALSE, DUPLICATE_SAME_ACCESS)) continue;
+
          unsigned char buffer[250];
          OBJECT_TYPE_INFORMATION* obj = (OBJECT_TYPE_INFORMATION*)buffer;
-         Query(data.HandleValue, ObjectTypeInformation, obj, sizeof(buffer), NULL);
-
+         Query(local, ObjectTypeInformation, obj, sizeof(buffer), NULL);
+         
          wprintf(L"%ws\n", obj->TypeName.Buffer);
 
+         if (wcscmp(obj->TypeName.Buffer, L"Process") == 0 && hProcess != NULL) {
+            printf("PID: %llu | Handle: 0x%llX | Type: %hu\n", (unsigned long long)data.UniqueProcessId, (unsigned long long)data.HandleValue, data.ObjectTypeIndex);
+            printf("mask: %p\n", data.GrantedAccess);
+
+            HANDLE token = NULL;
+            if (!OpenProcessToken(local, TOKEN_DUPLICATE, &token)) {
+                printf("Token cannot be opened %lu\n", GetLastError());
+                continue;
+            }
+
+            getTokenInfo(token);
+
+            printf("Token can be duplicated through Process handle\n");
+
         }
+         
+        if (wcscmp(obj->TypeName.Buffer, L"Token") == 0 && hProcess != NULL) {
+            printf("PID: %llu | Handle: 0x%llX | Type: %hu\n", (unsigned long long)data.UniqueProcessId, (unsigned long long)data.HandleValue, data.ObjectTypeIndex);
+            printf("mask: %p\n", data.GrantedAccess);
 
-    
+            HANDLE newToken;
+            if (!DuplicateTokenEx(
+            local,
+            TOKEN_ALL_ACCESS,
+            NULL,
+            SecurityImpersonation,
+            TokenPrimary,
+            &newToken)) {
+            printf("DuplicateTokenEx failed: %lu\n", GetLastError());
+            continue;
+            } 
+
+            getTokenInfo(newToken);
+
+            printf("New token handle can be Impersonated: %p\n", local);
+        }  
+            
     }
-
-    printf("Done\n");
-
-    return TRUE;
+        
+}
+            printf("Done\n");
+            return TRUE;
 }
 
 // Dump teb
@@ -2350,6 +2453,45 @@ if (rva != 0) {
 
    // Will add clr stuff
 
+}
+
+char* ip_to_string(DWORD addr, char* ip) { 
+    unsigned char a = (addr      ) & 0xFF;
+    unsigned char b = (addr >>  8) & 0xFF;
+    unsigned char c = (addr >> 16) & 0xFF;
+    unsigned char d = (addr >> 24) & 0xFF;
+
+    sprintf(ip, "%u.%u.%u.%u", a, b, c, d);
+    return 0;
+}
+
+int checkTcp(long pid) {
+    
+    writeCon("Getting Tcp data...\n");
+    MIB_TCPTABLE_OWNER_PID* table;
+    DWORD size = 0;
+    GetExtendedTcpTable(NULL, &size, 0, AF_INET, TCP_TABLE_OWNER_PID_ALL, 0);
+
+    table = (MIB_TCPTABLE_OWNER_PID*)malloc(size);
+
+    printf("%lu\n", size);
+
+    if (GetExtendedTcpTable(table, &size, 0, AF_INET, TCP_TABLE_OWNER_PID_ALL, 0) == NO_ERROR) {
+        for (int i=0; i < table->dwNumEntries; i++) {
+            MIB_TCPROW_OWNER_PID data = table->table[i];
+
+            char ip[16];
+            ip_to_string(data.dwLocalAddr, &ip);
+
+            char ipRemote[16];
+            ip_to_string(data.dwRemoteAddr, &ipRemote);
+
+            printf("%s[%lu] -> %s[%lu]\tState <%lu>\t ", ip, data.dwLocalPort, ipRemote, data.dwRemotePort, data.dwState);
+            printf("%lu\n", data.dwOwningPid);
+        }
+    }
+
+    return 0;
 }
 
 ///////////////////////////////////////////////////////////////////
@@ -2965,6 +3107,19 @@ void* addressMath(void* address1, int num) {
     return 0;
 }
 
+// void* convertEndian(unsigned char* bytes) {
+//     unsigned char out[12];
+//     printf("0x");
+//     for (int i=12; i >= 0; i--) {
+//         if (bytes[i] == 0x20) continue;
+//         out[i] = bytes[i];
+
+//         printf("%c", out[i], i);
+//     }
+//     printf("\n");
+//     return 0;
+// }
+
 int Save() {
     
     FILE* file = fopen("out.slp", "wb");
@@ -3029,17 +3184,26 @@ BOOL WINAPI debug(LPCVOID param) {
     
     // ATTACH stuff
     if (wcscmp(process, L"-c") == 0) {
-        pi.dwProcessId = GetProc(secondParam);
+        pi.dwProcessId = GetProc(secondParam, 0);
         pi.dwThreadId = threadid;
         if (pi.dwProcessId != 0 && pi.dwThreadId != 0) {
-        wprintf(L"\x1b[92m[+]\x1b[0m \033[35mDebugging %s:\033[0m\n", secondParam);
+        wprintf(L"\x1b[92m[+]\x1b[0m \033[35mDebugging %s %lu:\033[0m\n", secondParam, pi.dwProcessId);
         } else {
         printf("Error Wrong Process Name\n");
         }
 
-    } else {
+    } else if (wcscmp(process, L"-id") == 0) {
+        pi.dwProcessId = wcstol(secondParam, NULL, 10);
+        printf("%lu\n", pi.dwProcessId);
+        GetProc(NULL, pi.dwProcessId);
+        pi.dwThreadId = threadid;
+        if (pi.dwProcessId == 0 && pi.dwThreadId == 0) return 0;
+        
+        wprintf(L"\x1b[92m[+]\x1b[0m \033[35mDebugging %s:\033[0m\n", secondParam);
+
+       } else {
         // START process stuff
-    if (CreateProcessW(process, NULL, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
+        if (CreateProcessW(process, NULL, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
         wprintf(L"\x1b[92m[+]\x1b[0m \033[35mDebugging %ws:\033[0m\n", param);
         } else {
             writeCon("Wrong path...\n");
@@ -3052,9 +3216,9 @@ BOOL WINAPI debug(LPCVOID param) {
         //                                     Start of main Engine                                   // 
         ////////////////////////////////////////////////////////////////////////////////////////////////
         
-        HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ | PROCESS_ALL_ACCESS, FALSE, pi.dwProcessId);
+        hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ | PROCESS_ALL_ACCESS | PROCESS_SUSPEND_RESUME , FALSE, pi.dwProcessId);
         if (!hProcess) {
-            printf("Problem starting the debugger\n");
+            printf("Problem starting the debugger %lu\n", GetLastError());
         } else {
 
             DWORD threadId = pi.dwThreadId;
@@ -3439,7 +3603,7 @@ BOOL WINAPI debug(LPCVOID param) {
                                             temp = value;
                                         }
 
-                                        dumpHandle(temp);
+                                        dumpHandle(temp, NULL);
 
                                         //free(breakBuffer);
                                     }
@@ -3684,7 +3848,7 @@ BOOL WINAPI debug(LPCVOID param) {
 
                                         }
 
-                                        else if (mystrcmp(buff, ":wsl") == 0 && wslActive == 1) {
+                                        else if (mystrcmp(buff, ":wsl") == 0) {
                                             puts("type exit to go back to debugger");
                                             for (int i=0;; i++) {
                                             writeCon("wsl>>");
@@ -3703,7 +3867,7 @@ BOOL WINAPI debug(LPCVOID param) {
 
                                         }
 
-                                        else if (mystrcmp(buff, ":cmd") == 0 && wslActive == 1) {
+                                        else if (mystrcmp(buff, ":cmd") == 0) {
                                             puts("type exit to go back to debugger");
                                             for (int i=0;; i++) {
                                             writeCon("shell>>");
@@ -3742,6 +3906,23 @@ BOOL WINAPI debug(LPCVOID param) {
                                             readRawAddr(hProcess, address, 20, 0);
                                             
                                         }
+
+                                        // Check open TCP connections
+                                        else if (mystrcmp(buff, "!tcp") == 0) {
+                                            checkTcp( pi.dwProcessId);
+                                        }
+
+                                        // Shows extra handle info
+                                        else if (mystrcmp(buff, "!handlesEx") == 0) {
+                                            dumpHandle(pi.dwProcessId, hProcess);
+                                        }
+
+                                        // else if (mystrcmp(buff, "!convert") == 0) {
+                                        //     writeCon("Give endian:\n");
+                                        //     char buff[50];
+                                        //     fgets(buff, 50, stdin);
+                                        //     convertEndian(buff);
+                                        // }
                                         
                                     
                                     } else {
@@ -3756,12 +3937,36 @@ BOOL WINAPI debug(LPCVOID param) {
     return TRUE;
 }
 
+int setPriv() {
+    HANDLE hToken; 
+    OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken);
+
+    LUID luid;
+    LookupPrivilegeValue(NULL, SE_DEBUG_NAME, &luid);
+
+    TOKEN_PRIVILEGES tp;
+    tp.PrivilegeCount = 1;
+    tp.Privileges[0].Luid = luid;
+    tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+    AdjustTokenPrivileges(hToken, FALSE, &tp, sizeof(tp), NULL, NULL);
+
+    if (GetLastError() == ERROR_SUCCESS) {
+    printf("Running in god mode %lu\n", GetLastError());
+    }
+
+    return 0;
+
+}
+
 int wmain(int argc, wchar_t* argv[]) {
 
     if (!IsDebuggerPresent) {
         writeCon("No debugging the debugger\n");
         return 0;
     }
+
+    setPriv();
 
     LPVOID fiberMain = ConvertThreadToFiber(NULL); 
     LPVOID debugFiber = CreateFiber(0, debug, argv[1]);
