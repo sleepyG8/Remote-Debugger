@@ -8,8 +8,6 @@
 #include "capstone/capstone.h"
 #include "intrin.h"
 
-//add terminate
-
 #define STATUS_SUCCESS ((NTSTATUS)0x00000000L)
 #define STATUS_INFO_LENGTH_MISMATCH ((NTSTATUS)0xC0000004)
 
@@ -537,12 +535,14 @@ void* end;
 } CodeRegion;
 
 CodeRegion* codeBounds;
-
+int numOfFunction = 0;
 // Capstone disasm
 BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address, int funcNum, int tillRET) {
     csh handle;
     cs_insn *insn;
     size_t count;           // opstr count from capstone
+
+    numOfFunction = 0;
 
     // Initialize Capstone
     if (cs_open(CS_ARCH_X86, CS_MODE_64, &handle) != CS_ERR_OK) {
@@ -558,7 +558,7 @@ BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address, int func
         int numofInstructions = 0;
         for (size_t i = 0; i < count; i++) {
                 int printed = 0;
-                
+
                 if (insn[i].bytes == 0xC3) break;
                 for (int k=0; k < countImport; k++) {
 
@@ -589,6 +589,8 @@ BOOL disasm(HANDLE hProcess, uint8_t *code, int size, uint64_t address, int func
                             writeCon("Malicous File found!\n");
                             getchar();
                         }
+
+                        numOfFunction++;
 
                 } else {
                     if (printed == 0) {
@@ -2350,7 +2352,7 @@ NTSTATUS status = NtQuerySystemInformation(64, NULL, 0, &retlen);
                 continue;
             }
 
-            getTokenInfo(token);
+            if (!getTokenInfo(token)) continue;
 
             printf("Token can be duplicated through Process handle\n");
 
@@ -2372,16 +2374,14 @@ NTSTATUS status = NtQuerySystemInformation(64, NULL, 0, &retlen);
             continue;
             } 
 
-            getTokenInfo(newToken);
+            if (!getTokenInfo(newToken)) continue;
 
             printf("New token handle can be Impersonated: %p\n", local);
-        }  
-            
-    }
-        
+        }         
+    }      
 }
-            printf("Done\n");
-            return TRUE;
+printf("Done\n");
+return TRUE;
 }
 
 // Dump teb
@@ -3113,7 +3113,7 @@ void* addressMath(void* address1, int num) {
 //     for (int i=12; i >= 0; i--) {
 //         if (bytes[i] == 0x20) continue;
 //         out[i] = bytes[i];
-
+//
 //         printf("%c", out[i], i);
 //     }
 //     printf("\n");
@@ -3171,6 +3171,13 @@ BOOL staticDisasm(char* buff, char* intbuff) {
 wchar_t* secondParam = NULL; // argv[2]
 wchar_t* dllChoice; // Only for DLLs
 
+typedef struct lastDisasm {
+    int lastFuncDisasm;
+    int size;
+} lastDisasm;
+
+lastDisasm* lastFunction = NULL;
+
 char *breakBuff;
 BOOL clipSniper = 0;
 BOOL clipRan = 0;
@@ -3224,7 +3231,7 @@ BOOL WINAPI debug(LPCVOID param) {
             DWORD threadId = pi.dwThreadId;
             
             if (threadId == NULL) {
-                printf("Error getting the thread ID...\n");
+                writeCon("Error getting the thread ID...\n");
                 return FALSE;
             } 
        
@@ -3262,47 +3269,48 @@ BOOL WINAPI debug(LPCVOID param) {
                              }
 
                             }
+                            
                             printf("\033[35mDebug>>\033[0m");
 
                             // Custom memory allocator
                             allocStdin(AllocatedRegion, offsetHandles + 200, stdin);
-
                             // Reading from allocated region
                             char* buff = (char*)readAlloc(AllocatedRegion, offsetHandles + 200);
                             
                             buff[strcspn(buff, "\n")] = '\0';
-                            
-                            if (buff != NULL) {
+                                                                       
+                            if ((unsigned char*)buff[0] != 00) {
                                         
-                            if (mystrcmp(buff, "!reg") == 0) {
-                               printf("Process ID: %lu\n", pi.dwProcessId);
-                               printf("Thread ID: %lu\n", pi.dwThreadId);
-                               printf("RIP: 0x%016llX\n", context.Rip);
-                               printf("RAX: 0x%016llX\n", context.Rax);
-                               printf("RBX: 0x%016llX\n", context.Rbx);
-                               printf("RCX: 0x%016llX\n", context.Rcx);
-                               printf("RDX: 0x%016llX\n", context.Rdx);
-                               printf("R8:  0x%016llX\n", context.R8);
-                               printf("R9:  0x%016llX\n", context.R9);
-                            }
-                            
-                           else if (mystrcmp(buff, "!attr") == 0) {
-
-                            //geting object info
-                            typedef NTSTATUS (NTAPI *pNtQueryObject)(HANDLE, OBJECT_INFORMATION_CLASS, PVOID, ULONG, PULONG);
-        
-                            HMODULE hNtDll = LoadLibrary("ntdll.dll");
-                            pNtQueryObject NtQueryObject = (pNtQueryObject)GetProcAddress(hNtDll, "NtQueryObject");
-    
-                            PUBLIC_OBJECT_BASIC_INFORMATION objInfo;
-    
-                            // HANDLE hObject = GetCurrentProcess();
-                            ULONG size;
-                            NTSTATUS status = NtQueryObject(hProcess, ObjectBasicInformation, &objInfo, sizeof(objInfo), &size);
-        
-                            if (!GetSecurityDescriptor(hProcess)) {
-                                  printf("error\n");
+                                if (mystrcmp(buff, "!reg") == 0) {
+                                    printf("Process ID: %lu\n", pi.dwProcessId);
+                                    printf("Thread ID: %lu\n", pi.dwThreadId);
+                                    printf("RIP: 0x%016llX\n", context.Rip);
+                                    printf("RAX: 0x%016llX\n", context.Rax);
+                                    printf("RBX: 0x%016llX\n", context.Rbx);
+                                    printf("RCX: 0x%016llX\n", context.Rcx);
+                                    printf("RDX: 0x%016llX\n", context.Rdx);
+                                    printf("R8:  0x%016llX\n", context.R8);
+                                    printf("R9:  0x%016llX\n", context.R9);
                                 }
+                            
+                                else if (mystrcmp(buff, "!attr") == 0) {
+
+                                //geting object info
+                                typedef NTSTATUS (NTAPI *pNtQueryObject)(HANDLE, OBJECT_INFORMATION_CLASS, PVOID, ULONG, PULONG);
+        
+                                HMODULE hNtDll = LoadLibrary("ntdll.dll");
+                                pNtQueryObject NtQueryObject = (pNtQueryObject)GetProcAddress(hNtDll, "NtQueryObject");
+    
+                                PUBLIC_OBJECT_BASIC_INFORMATION objInfo;
+    
+                                // HANDLE hObject = GetCurrentProcess();
+                                ULONG size;
+                                NTSTATUS status = NtQueryObject(hProcess, ObjectBasicInformation, &objInfo, sizeof(objInfo), &size);
+        
+                                if (!GetSecurityDescriptor(hProcess)) {
+                                    printf("error\n");
+                                }
+
                                 printf("\x1b[92m[+]\x1b[0m Object Attributes: %i\n", objInfo.Attributes); 
                                 printf("\x1b[92m[+]\x1b[0m Granted Access: %08X\n", objInfo.GrantedAccess);
                                 printf("\x1b[92m[+]\x1b[0m Handle count: %lu\n", objInfo.HandleCount); 
@@ -3737,16 +3745,42 @@ BOOL WINAPI debug(LPCVOID param) {
                                     }
 
                                     else if (mystrcmp(buff, "!disasm") == 0) {
+
+                                        if (!lastFunction) {
+                                            lastFunction = malloc(sizeof(lastFunction));
+                                            lastFunction->lastFuncDisasm = 0;
+                                            lastFunction->size = 0;
+                                        }
                                        
                                         for (int i=0; i < funcCount; i++) {
 
+                                            if (lastFunction->lastFuncDisasm != 0) {
+                                                writeCon("Would you like to restore the save point?\n");
+                                                
+                                                allocStdin(AllocatedRegion, offsetHandles + 1400, stdin);
+                                                char* restoreBuff = readAlloc(AllocatedRegion, offsetHandles + 1400);   
+                                                restoreBuff[strcspn(restoreBuff, "\n")] = '\0';
+
+                                                if (mystrcmp(restoreBuff, "y") == 0|| mystrcmp(restoreBuff, "Y") == 0) {
+                                                writeCon("Restoring save point!\n");
+                                                i = lastFunction->lastFuncDisasm;
+                                                lastFunction->lastFuncDisasm = 0;
+                                                lastFunction->size = 0;
+                                                } else {
+                                                    lastFunction->lastFuncDisasm = 0;
+                                                    lastFunction->size = 0;
+                                                    printf("Restarting the dissassembler\n");
+                                                }
+                                            }
+
+                                            printf("i = %lu\n", i);
                                             printf("<%lu>: Begin: %p\tEnd: %p - Size: %lu\n", functions[i].num, functions[i].begin, functions[i].end, functions[i].size);
 
                                             if (functions[i].firstByte != 0x48 || functions[i].size < 100) continue;            // continue if not x64 code and filter out filler
 
                                             readRawAddr(hProcess, functions[i].begin, functions[i].size, i);
-
-                                            printf("[%lu] <Enter> Move Forward\t<-> Move Back\t<q> End\n", functions[i].num);
+                                            
+                                            printf("\x1b[92m[+]\x1b[0m Functions called: %lu\n\x1b[92m[?]\x1b[0m[%lu] <Enter> Move Forward\t<-> Move Back\t<q> End\n", numOfFunction, functions[i].num);
 
                                             allocStdin(AllocatedRegion, offsetHandles + 1000, stdin);
 
@@ -3755,8 +3789,11 @@ BOOL WINAPI debug(LPCVOID param) {
                                             breakBuffer[strcspn(breakBuffer, "\n")] = '\0';
 
                                             if (strcmp(breakBuffer, "-") == 0) {
-                                                i -= 2;
+                                                i -= 3;
                                             } else if (strcmp(breakBuffer, "q") == 0) {
+                                                lastFunction->lastFuncDisasm = i;
+                                                lastFunction->size = functions[i].size;
+                                                writeCon("Created save point!\n");
                                                 break;
                                             } else continue;
                                         
@@ -3924,19 +3961,25 @@ BOOL WINAPI debug(LPCVOID param) {
                                         //     convertEndian(buff);
                                         // }
                                         
+                                        else {
+                                            writeCon("Wrong command\n");
+                                        }
                                     
                                     } else {
                                          printf("run -help- to see the help menu.\n");
                                         }                         
+                                    
                                     }                  
                                 }   
-                                                                 
+           
+    // Closing the cmd Line cleanup
     WaitForInputIdle(pi.hProcess, INFINITE);
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
     return TRUE;
 }
 
+// Run as admin to set SeDebugPriv
 int setPriv() {
     HANDLE hToken; 
     OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken);
@@ -3988,7 +4031,7 @@ int wmain(int argc, wchar_t* argv[]) {
         return 0;
     }
 
-        if (wcscmp(argv[1], L"-l") == 0) {
+    if (wcscmp(argv[1], L"-l") == 0) {
         listProcesses();
         return 0;
     }
@@ -4032,7 +4075,6 @@ int wmain(int argc, wchar_t* argv[]) {
 
     }
 
-
     if (wcscmp(argv[1], L"-open") == 0) {
 
         if (argv[3]) {
@@ -4060,7 +4102,6 @@ int wmain(int argc, wchar_t* argv[]) {
         }
     }
 
-    
     if (wcscmp(argv[2], L"-b") == 0) {
         breakpointSet = 1;
         
@@ -4078,7 +4119,6 @@ int wmain(int argc, wchar_t* argv[]) {
 
     }
     
-
     if (wcscmp(argv[1], L"-ELF") == 0) {
         if (argc < 3) {
             writeCon("Path to .so file\n");
@@ -4145,5 +4185,6 @@ int wmain(int argc, wchar_t* argv[]) {
           // Cleanup
 
 }
-return 0;
+
+    return 0;
 }
